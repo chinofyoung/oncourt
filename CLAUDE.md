@@ -1,4 +1,4 @@
-# Piko — Pickleball Court Booking Platform (Philippines)
+# OnCourt — Pickleball Court Booking Platform (Philippines)
 
 Marketplace where players find and book pickleball courts, court owners list
 courts across branches, and admins moderate listings. Bookings are paid online
@@ -23,7 +23,19 @@ courts across branches, and admins moderate listings. Bookings are paid online
 
 ## Project conventions
 
-- Stack (planned): Next.js (App Router, TS) + Convex; Convex Auth (Google only);
-  PayMongo behind a `PaymentProvider` interface; Resend for email.
+- Stack (planned): Next.js (App Router, TS) + Supabase (Postgres, Auth, Storage);
+  Supabase Auth with Google only; Drizzle as typed query builder over SQL
+  migrations in `supabase/migrations`; PayMongo behind a `PaymentProvider`
+  interface; Resend for email.
+- Data access is **server-only** — the browser never queries Postgres. All reads
+  and writes go through Server Components, Server Actions, and Route Handlers.
+  TypeScript is the security boundary; RLS is defense-in-depth (Drizzle connects
+  as a DB role, so RLS does not constrain our own queries).
+- All money is stored as `integer` centavos; percentages as integer basis points.
+  Never floats.
+- Schema truth is the SQL migration files, not `schema.ts` — after a migration,
+  regenerate types with `drizzle-kit pull`.
+- Tests run against the local Supabase stack (Docker), not mocks: the DB
+  constraints are the logic.
 - Currency is PHP (₱); market is the Philippines. Copy may use light Taglish.
-- Brand name "piko" is a placeholder — keep it easily swappable.
+- Brand name "OnCourt" is a placeholder — keep it easily swappable.
