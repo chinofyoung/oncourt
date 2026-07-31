@@ -1,0 +1,510 @@
+<!-- @dsCard group="Pages" name="Branch page — booking grid" -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Palo Verde Pickle Club — Piko</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #0C1F16;
+    --ink-soft: #5B6E60;
+    --surface: #FAFBF8;
+    --panel: #FFFFFF;
+    --hairline: #E5EAE2;
+    --court: #2E6B4F;
+    --court-deep: #143D2C;
+    --ball: #E8FF54;
+    --ball-ink: #232D00;
+    --booked: #E7ECE2;
+    --band-off: #EAF2E4;
+    --band-peak: #CDE3C2;
+    --display: "Inter Tight", "Inter", "Helvetica Neue", Arial, sans-serif;
+    --body: "Inter", "Helvetica Neue", Arial, sans-serif;
+    --mono: "Spline Sans Mono", "SF Mono", Menlo, monospace;
+    --shadow-sm: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05);
+    --shadow-lg: 0 12px 32px rgba(12, 31, 22, .12);
+    /* control sizing tokens (match home.html) */
+    --control-h: 56px;   /* hero-level fields/buttons */
+    --btn-h: 48px;       /* standard buttons (Book now) */
+    --btn-h-sm: 38px;    /* compact controls (icon buttons, slot cells) */
+    --btn-radius: 12px;  /* one corner radius for all buttons & fields */
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: var(--body);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  button { font: inherit; cursor: pointer; background: none; border: none; color: inherit; }
+  button:focus-visible, a:focus-visible { outline: 3px solid var(--court); outline-offset: 2px; border-radius: 4px; }
+
+  /* ---------- Nav ---------- */
+  .nav {
+    display: flex; align-items: center; gap: 32px;
+    padding: 14px max(24px, calc((100vw - 1120px) / 2));
+    background: var(--surface);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .wordmark {
+    font-family: var(--display); font-weight: 800; font-size: 26px; letter-spacing: -0.03em;
+    display: flex; align-items: baseline; gap: 2px; color: var(--ink); text-decoration: none;
+  }
+  .wordmark::after { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--ball); border: 1.5px solid var(--ink); }
+  .nav-links { display: flex; gap: 26px; margin-left: 12px; flex: 1; }
+  .nav-links a { color: var(--ink-soft); text-decoration: none; font-weight: 500; font-size: 14.5px; }
+  .nav-links a[aria-current] { color: var(--ink); font-weight: 600; }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--court); color: #fff; font-weight: 600; font-size: 13px;
+    display: grid; place-items: center;
+  }
+  .list-court { font-size: 14px; font-weight: 600; color: var(--court-deep); text-decoration: none; margin-right: 8px; }
+
+  /* ---------- Page grid ---------- */
+  .page {
+    display: grid; grid-template-columns: 360px 1fr; gap: 28px;
+    max-width: 1120px; margin: 0 auto; padding: 28px 24px 60px;
+    align-items: start;
+  }
+
+  /* ---------- Left rail ---------- */
+  .gallery { display: grid; grid-template-columns: 2fr 1fr; grid-auto-rows: 96px; gap: 6px; border-radius: 14px; overflow: hidden; }
+  .shot { position: relative; overflow: hidden; }
+  .shot.main { grid-row: span 2; }
+  .shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .shot-count {
+    position: absolute; right: 10px; bottom: 10px; z-index: 2;
+    font-family: var(--mono); font-size: 11.5px; color: #fff;
+    background: rgba(14, 42, 31, .75); padding: 3px 9px; border-radius: 999px;
+  }
+
+  .venue-head { margin-top: 20px; }
+  .crumb { font-family: var(--mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
+  h1 { font-family: var(--display); font-weight: 800; font-size: 33px; letter-spacing: -0.02em; line-height: 1.1; margin-top: 6px; }
+  .venue-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 14px; color: var(--ink-soft); }
+  .rating { font-weight: 600; color: var(--ink); }
+  .rating .ball-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--ball); border: 1.5px solid var(--ink); margin-right: 5px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .chip {
+    font-size: 13px; font-weight: 500; color: var(--court-deep);
+    background: var(--panel); border: 1px solid var(--hairline); border-radius: 999px; padding: 5px 12px;
+  }
+
+  .card { background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 20px; margin-top: 16px; }
+  .card h2 { font-family: var(--display); font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  .card p { color: var(--ink-soft); font-size: 14px; }
+  .review { display: flex; gap: 12px; margin-top: 12px; }
+  .review .avatar { flex: none; background: var(--court-deep); }
+  .review-name { font-weight: 600; font-size: 13.5px; }
+  .review-stars { font-family: var(--mono); font-size: 11px; color: var(--court); letter-spacing: .1em; }
+  .review p { margin-top: 3px; }
+  .map {
+    margin-top: 12px; height: 110px; border-radius: 10px; position: relative; overflow: hidden;
+    background: #EDF2E9;
+  }
+  .pin {
+    position: absolute; left: 46%; top: 38%;
+    width: 14px; height: 14px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+    background: var(--court-deep); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(14,42,31,.35);
+  }
+
+  /* ---------- Booking panel ---------- */
+  .booking {
+    background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .booking-top {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 18px 22px; border-bottom: 1px solid var(--hairline);
+  }
+  .booking-top h2 { font-family: var(--display); font-size: 21px; font-weight: 700; letter-spacing: -0.01em; flex: 1; }
+  .live {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--court-deep);
+  }
+  .live i {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--court); position: relative;
+  }
+  .live i::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 50%;
+    border: 2px solid var(--court); opacity: .5; animation: pulse 2s ease-out infinite;
+  }
+  @keyframes pulse { from { transform: scale(.5); opacity: .7; } to { transform: scale(1.3); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .live i::after { animation: none; } }
+
+  .datebar { display: flex; align-items: center; gap: 10px; }
+  .datebar .day { font-family: var(--display); font-weight: 700; font-size: 16px; }
+  .today-tag {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+    background: var(--ink); color: var(--ball); border-radius: 999px; padding: 3px 9px;
+  }
+  .icon-btn {
+    width: var(--btn-h-sm); height: var(--btn-h-sm); border: 1px solid var(--hairline); border-radius: var(--btn-radius);
+    display: grid; place-items: center; font-size: 15px; color: var(--ink-soft); background: var(--panel);
+  }
+  .icon-btn:hover { border-color: var(--court); color: var(--court-deep); }
+
+  /* ---------- Grid ---------- */
+  .grid-scroll { overflow-x: auto; }
+  table.slots { border-collapse: collapse; width: 100%; min-width: 780px; }
+  .slots th, .slots td { border-bottom: 1px solid var(--hairline); }
+
+  .slots thead th {
+    position: sticky; top: 0; z-index: 2; background: var(--panel);
+    padding: 12px 8px 10px; text-align: center;
+  }
+  .court-name { font-family: var(--display); font-weight: 700; font-size: 15px; display: block; }
+  .court-tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-soft); display: inline-block; margin-top: 3px;
+    padding: 2px 7px; border-radius: 999px; border: 1px solid var(--hairline);
+  }
+  .court-tag.outdoor { background: var(--band-off); border-color: transparent; }
+
+  /* time spine — the rate-band thermometer */
+  .slots td.time {
+    width: 118px; padding: 0 12px 0 16px; white-space: nowrap;
+    font-family: var(--mono); font-size: 12px; color: var(--ink);
+    border-right: 1px solid var(--hairline);
+    position: sticky; left: 0; z-index: 1; background: var(--panel);
+  }
+  .slots thead th:first-child { position: sticky; left: 0; z-index: 3; background: var(--panel); }
+  tr.band-off td.time { background: var(--band-off); }
+  tr.band-peak td.time { background: var(--band-peak); }
+  .band-label {
+    display: block; font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--court-deep);
+    font-weight: 600; margin-top: 1px;
+  }
+
+  .slots tbody th.session {
+    background: var(--surface);
+    font-family: var(--mono); font-size: 10.5px; font-weight: 500;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft);
+    text-align: left; padding: 7px 16px;
+  }
+
+  .slots td.cell { padding: 4px; text-align: center; height: 46px; }
+  .slot-btn {
+    width: 100%; height: var(--btn-h-sm); border-radius: var(--btn-radius);
+    font-family: var(--mono); font-size: 12px; font-weight: 500;
+    color: var(--court-deep); background: #FBFDF9; border: 1px solid var(--hairline);
+    transition: border-color .12s, background .12s;
+  }
+  .slot-btn:hover { border-color: var(--court); background: #F1F7EC; }
+  .slot-btn.booked {
+    cursor: default; color: #9DAA9B; border-color: transparent;
+    background: var(--booked);
+  }
+  .slot-btn.selected {
+    position: relative;
+    background: var(--ball); border: 1.5px solid var(--ink); color: var(--ball-ink); font-weight: 600;
+  }
+  /* court-corner ticks on selection */
+  .slot-btn.selected::before, .slot-btn.selected::after {
+    content: ""; position: absolute; width: 7px; height: 7px; pointer-events: none;
+  }
+  .slot-btn.selected::before { left: 3px; top: 3px; border-left: 2px solid var(--ball-ink); border-top: 2px solid var(--ball-ink); }
+  .slot-btn.selected::after { right: 3px; bottom: 3px; border-right: 2px solid var(--ball-ink); border-bottom: 2px solid var(--ball-ink); }
+
+  /* ---------- Summary bar ---------- */
+  .summary {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 16px 22px; border-top: 2px solid var(--ink); background: var(--panel);
+    position: sticky; bottom: 0;
+  }
+  .summary-empty { color: var(--ink-soft); font-size: 14px; }
+  .summary-detail { flex: 1; min-width: 200px; }
+  .summary-detail .what { font-family: var(--display); font-weight: 700; font-size: 16px; }
+  .summary-detail .sub { font-size: 13px; color: var(--ink-soft); margin-top: 1px; }
+  .summary-total { text-align: right; }
+  .summary-total .amt { font-family: var(--mono); font-weight: 600; font-size: 20px; }
+  .summary-total .fee-note { font-size: 11.5px; color: var(--ink-soft); }
+  .book-btn {
+    font-family: var(--display); font-weight: 700; font-size: 16px;
+    background: var(--ink); color: var(--ball);
+    border-radius: var(--btn-radius); height: var(--btn-h);
+    display: inline-flex; align-items: center; padding: 0 30px;
+  }
+  .book-btn:hover { background: var(--court-deep); }
+  .book-btn[disabled] { opacity: .35; cursor: default; }
+
+  @media (max-width: 980px) {
+    .page { grid-template-columns: 1fr; padding: 20px 16px 40px; gap: 20px; }
+    .nav { padding: 12px 16px; }
+    .nav-links { display: none; }
+    h1 { font-size: 27px; }
+    .booking-top { padding: 14px 16px; gap: 10px; }
+    .booking-top h2 { font-size: 19px; flex-basis: 100%; }
+    .datebar { flex: 1; }
+    .datebar .day { flex: 1; }
+    .summary { padding: 14px 16px; gap: 12px; }
+    .summary-total { text-align: left; }
+    .book-btn { flex: 1; justify-content: center; }
+  }
+
+  /* ---------- Mockup page switcher (dev-only aid, not part of product UI) ---------- */
+  .mock-switcher { position: fixed; right: 24px; bottom: 24px; z-index: 9999; }
+  .mock-switcher summary {
+    list-style: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 38px; padding: 0 16px; border-radius: 12px;
+    background: var(--ink); color: #fff;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    box-shadow: 0 12px 32px rgba(12, 31, 22, .25);
+  }
+  .mock-switcher summary::marker { content: ""; }
+  .mock-switcher summary::-webkit-details-marker { display: none; }
+  .mock-switcher summary::after { content: "▾"; font-size: 9px; }
+  .mock-switcher[open] summary::after { content: "▴"; }
+  .mock-switcher .ms-panel {
+    position: absolute; right: 0; bottom: calc(100% + 10px);
+    width: 216px; background: var(--panel);
+    border: 1px solid var(--hairline, var(--line, #E5EAE2));
+    border-radius: 20px;
+    box-shadow: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05), 0 12px 32px rgba(12, 31, 22, .12);
+    padding: 8px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .mock-switcher .ms-row {
+    display: block; padding: 9px 12px; border-radius: 10px;
+    font-family: var(--body); font-size: 13px; font-weight: 500; color: var(--ink); text-decoration: none;
+  }
+  .mock-switcher a.ms-row:hover { background: var(--surface); }
+  .mock-switcher .ms-row.ms-current { background: var(--band-off, #EAF2E4); color: var(--court-deep); font-weight: 600; cursor: default; }
+</style>
+
+<nav class="nav">
+  <a class="wordmark" href="#">piko</a>
+  <div class="nav-links">
+    <a href="#" aria-current="page">Find courts</a>
+    <a href="#">My bookings</a>
+  </div>
+  <a class="list-court" href="#">List your court</a>
+  <span class="avatar">CY</span>
+</nav>
+
+<main class="page">
+  <!-- ============ Left rail: venue identity ============ -->
+  <section aria-label="Venue details">
+    <div class="gallery">
+      <figure class="shot main">
+        <img src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=70&w=900&auto=format&fit=crop" alt="Players rallying on an outdoor pickleball court">
+      </figure>
+      <figure class="shot">
+        <img src="https://images.unsplash.com/photo-1756477558468-b3e485757470?q=70&w=500&auto=format&fit=crop" alt="Player mid-swing on a pickleball court">
+      </figure>
+      <figure class="shot">
+        <img src="https://images.unsplash.com/photo-1693142518820-78d7a05f1546?q=70&w=500&auto=format&fit=crop" alt="Paddles and balls on the court surface">
+        <span class="shot-count">1 / 12</span>
+      </figure>
+    </div>
+
+    <header class="venue-head">
+      <span class="crumb">Tagum City · Davao del Norte</span>
+      <h1>Palo Verde Pickle Club</h1>
+      <div class="venue-meta">
+        <span class="rating"><span class="ball-dot"></span>4.8 <span style="font-weight:400;color:var(--ink-soft)">(132 reviews)</span></span>
+        <span>·</span>
+        <span>Apokon Rd, Tagum City</span>
+        <span>·</span>
+        <span>1.9 km away</span>
+      </div>
+      <div class="chips">
+        <span class="chip">4 indoor · 2 outdoor</span>
+        <span class="chip">Night lighting</span>
+        <span class="chip">Free parking</span>
+        <span class="chip">Paddle rental</span>
+        <span class="chip">Showers</span>
+      </div>
+    </header>
+
+    <article class="card">
+      <h2>About</h2>
+      <p>Six championship-lined courts on the Apokon ridge — four covered, two open-air. Cushioned acrylic surface, 8-meter ceilings indoors, and lights good enough for 10 PM finals. Walk-ins welcome when the grid shows green.</p>
+    </article>
+
+    <article class="card">
+      <h2>Latest review</h2>
+      <div class="review">
+        <span class="avatar" aria-hidden="true">AR</span>
+        <div>
+          <span class="review-name">Anna R.</span>
+          <span class="review-stars" aria-label="5 out of 5">●●●●●</span>
+          <p>Maayos ang courts, laging malinis. Solid ang night lighting sa outdoor — kahit 9 PM game, walang problema.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2>Where to find us</h2>
+      <div class="map" role="img" aria-label="Map showing venue location">
+        <span class="pin"></span>
+      </div>
+    </article>
+  </section>
+
+  <!-- ============ Right: booking panel ============ -->
+  <section class="booking" aria-label="Book a court">
+    <div class="booking-top">
+      <h2>Book a court</h2>
+      <span class="live"><i></i>Live availability</span>
+      <div class="datebar">
+        <button class="icon-btn" aria-label="Previous day">‹</button>
+        <span class="day">Fri, Aug 1</span>
+        <span class="today-tag">Today</span>
+        <button class="icon-btn" aria-label="Pick a date">▦</button>
+        <button class="icon-btn" aria-label="Next day">›</button>
+      </div>
+    </div>
+
+    <div class="grid-scroll">
+      <table class="slots">
+        <thead>
+          <tr>
+            <th scope="col" style="text-align:left;padding-left:16px">
+              <span class="court-tag" style="border:none;padding-left:0">Time · Rate</span>
+            </th>
+            <th scope="col"><span class="court-name">A1</span><span class="court-tag">Indoor</span></th>
+            <th scope="col"><span class="court-name">A2</span><span class="court-tag">Indoor</span></th>
+            <th scope="col"><span class="court-name">A3</span><span class="court-tag">Indoor</span></th>
+            <th scope="col"><span class="court-name">A4</span><span class="court-tag">Indoor</span></th>
+            <th scope="col"><span class="court-name">B1</span><span class="court-tag outdoor">Outdoor</span></th>
+            <th scope="col"><span class="court-name">B2</span><span class="court-tag outdoor">Outdoor</span></th>
+          </tr>
+        </thead>
+        <tbody id="grid"><!-- rows injected --></tbody>
+      </table>
+    </div>
+
+    <div class="summary" id="summary">
+      <span class="summary-empty" id="summaryEmpty">Select open slots in one court’s column to book.</span>
+      <div class="summary-detail" id="summaryDetail" hidden>
+        <div class="what" id="sumWhat">Court A2 · 7–9 AM</div>
+        <div class="sub" id="sumSub">Fri, Aug 1 · 2 hours · Indoor</div>
+      </div>
+      <div class="summary-total" id="summaryTotal" hidden>
+        <div class="amt" id="sumAmt">₱600</div>
+        <div class="fee-note">incl. all court fees · pay with GCash, Maya, or card</div>
+      </div>
+      <button class="book-btn" id="bookBtn" disabled>Book now</button>
+    </div>
+  </section>
+</main>
+
+<script>
+  // Demo data: hours 6:00–21:00. Bands: off-peak 6–16, peak 16–22.
+  // Indoor (A*): ₱300 off / ₱350 peak. Outdooor rates below. Booked = pre-seeded.
+  const COURTS = [
+    { id: 'A1', type: 'Indoor',  off: 300, peak: 350 },
+    { id: 'A2', type: 'Indoor',  off: 300, peak: 350 },
+    { id: 'A3', type: 'Indoor',  off: 300, peak: 350 },
+    { id: 'A4', type: 'Indoor',  off: 300, peak: 350 },
+    { id: 'B1', type: 'Outdoor', off: 200, peak: 250 },
+    { id: 'B2', type: 'Outdoor', off: 200, peak: 250 },
+  ];
+  const HOURS = Array.from({ length: 16 }, (_, i) => 6 + i); // 6..21
+  const PEAK_START = 16;
+  const SESSIONS = { 6: 'Morning', 12: 'Afternoon', 17: 'Evening' };
+  const BOOKED = new Set([
+    'A1-8','A1-18','A1-19','A2-6','A2-12','A2-18','A3-9','A3-17','A3-18','A3-19',
+    'A4-18','A4-20','B1-7','B1-17','B1-18','B2-16','B2-17','B2-18','B2-19','A1-11','A4-10'
+  ]);
+
+  const fmtH = h => {
+    const ampm = h < 12 ? 'AM' : 'PM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12} ${ampm}`;
+  };
+
+  const tbody = document.getElementById('grid');
+  let rows = '';
+  for (const h of HOURS) {
+    if (SESSIONS[h]) rows += `<tr><th class="session" colspan="7" scope="rowgroup">${SESSIONS[h]}</th></tr>`;
+    const peak = h >= PEAK_START;
+    rows += `<tr class="${peak ? 'band-peak' : 'band-off'}">`;
+    rows += `<td class="time">${fmtH(h)} – ${fmtH(h + 1)}<span class="band-label">${peak ? 'Peak rate' : 'Off-peak'}</span></td>`;
+    for (const c of COURTS) {
+      const key = `${c.id}-${h}`;
+      const price = peak ? c.peak : c.off;
+      rows += `<td class="cell">`;
+      rows += BOOKED.has(key)
+        ? `<button class="slot-btn booked" disabled aria-label="${c.id} ${fmtH(h)} booked">Booked</button>`
+        : `<button class="slot-btn" data-court="${c.id}" data-hour="${h}" data-price="${price}" aria-label="Book ${c.id} at ${fmtH(h)} for ${price} pesos">₱${price}</button>`;
+      rows += `</td>`;
+    }
+    rows += `</tr>`;
+  }
+  tbody.innerHTML = rows;
+
+  // Selection: consecutive hours within one court column.
+  let sel = { court: null, hours: [] };
+  const els = {
+    empty: document.getElementById('summaryEmpty'),
+    detail: document.getElementById('summaryDetail'),
+    total: document.getElementById('summaryTotal'),
+    what: document.getElementById('sumWhat'),
+    sub: document.getElementById('sumSub'),
+    amt: document.getElementById('sumAmt'),
+    book: document.getElementById('bookBtn'),
+  };
+
+  tbody.addEventListener('click', e => {
+    const btn = e.target.closest('.slot-btn:not(.booked)');
+    if (!btn) return;
+    const court = btn.dataset.court, hour = +btn.dataset.hour;
+
+    if (sel.court !== court) { sel = { court, hours: [hour] }; }
+    else if (sel.hours.includes(hour)) {
+      sel.hours = sel.hours.filter(x => x !== hour);
+      if (!sel.hours.length) sel.court = null;
+    }
+    else if (hour === Math.min(...sel.hours) - 1 || hour === Math.max(...sel.hours) + 1) sel.hours.push(hour);
+    else sel = { court, hours: [hour] };
+
+    render();
+  });
+
+  function render() {
+    document.querySelectorAll('.slot-btn.selected').forEach(b => b.classList.remove('selected'));
+    let total = 0;
+    for (const h of sel.hours) {
+      const b = tbody.querySelector(`[data-court="${sel.court}"][data-hour="${h}"]`);
+      b.classList.add('selected');
+      total += +b.dataset.price;
+    }
+    const has = sel.hours.length > 0;
+    els.empty.hidden = has;
+    els.detail.hidden = !has;
+    els.total.hidden = !has;
+    els.book.disabled = !has;
+    if (has) {
+      const lo = Math.min(...sel.hours), hi = Math.max(...sel.hours) + 1;
+      const court = COURTS.find(c => c.id === sel.court);
+      els.what.textContent = `Court ${sel.court} · ${fmtH(lo)} – ${fmtH(hi)}`;
+      els.sub.textContent = `Fri, Aug 1 · ${sel.hours.length} hour${sel.hours.length > 1 ? 's' : ''} · ${court.type}`;
+      els.amt.textContent = `₱${total.toLocaleString()}`;
+    }
+  }
+
+  // Pre-select a realistic state so the summary bar reads full.
+  sel = { court: 'A2', hours: [7, 8] };
+  render();
+</script>
+
+<details class="mock-switcher">
+  <summary>Pages</summary>
+  <div class="ms-panel">
+    <a class="ms-row" href="index.html">Index</a>
+    <a class="ms-row" href="home.html">Home</a>
+    <a class="ms-row" href="search-results.html">Search results</a>
+    <span class="ms-row ms-current">Branch page</span>
+    <a class="ms-row" href="owner-profile.html">Owner profile</a>
+    <a class="ms-row" href="owner-dashboard.html">Owner dashboard</a>
+    <a class="ms-row" href="checkout.html">Checkout</a>
+    <a class="ms-row" href="admin-approvals.html">Admin approvals</a>
+  </div>
+</details>

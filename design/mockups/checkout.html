@@ -1,0 +1,374 @@
+<!-- @dsCard group="Pages" name="Checkout — review & pay" -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout — Piko</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #0E2A1F;
+    --ink-soft: #48604F;
+    --surface: #F3F6F0;
+    --panel: #FFFFFF;
+    --line: #DCE5D8;
+    --court: #2E6B4F;
+    --court-deep: #17503A;
+    --ball: #E8FF54;
+    --ball-ink: #2A3500;
+    --booked: #E7ECE2;
+    --band-off: #EAF2E4;
+    --band-peak: #CDE3C2;
+    --display: "Inter Tight", "Inter", "Helvetica Neue", Arial, sans-serif;
+    --body: "Inter", "Helvetica Neue", Arial, sans-serif;
+    --mono: "Spline Sans Mono", "SF Mono", Menlo, monospace;
+    /* control sizing tokens (match branch-page.html) */
+    --control-h: 56px;   /* hero-level fields/buttons */
+    --btn-h: 48px;       /* standard buttons */
+    --btn-h-sm: 38px;    /* compact controls */
+    --btn-radius: 12px;  /* one corner radius for all buttons & fields */
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: var(--body);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  button { font: inherit; cursor: pointer; background: none; border: none; color: inherit; }
+  button:focus-visible, a:focus-visible { outline: 3px solid var(--court); outline-offset: 2px; border-radius: 4px; }
+
+  /* ---------- Nav (solid utility pattern, matches branch-page.html) ---------- */
+  .nav {
+    display: flex; align-items: center; gap: 32px;
+    padding: 14px max(24px, calc((100vw - 1120px) / 2));
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  .wordmark {
+    font-family: var(--display); font-weight: 800; font-size: 26px; letter-spacing: -0.03em;
+    display: flex; align-items: baseline; gap: 2px; color: var(--ink); text-decoration: none;
+  }
+  .wordmark::after { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--ball); border: 1.5px solid var(--ink); }
+  .nav-links { display: flex; gap: 26px; margin-left: 12px; flex: 1; }
+  .nav-links a { color: var(--ink-soft); text-decoration: none; font-weight: 500; font-size: 14.5px; }
+  .nav-links a[aria-current] { color: var(--ink); font-weight: 600; }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--court); color: #fff; font-weight: 600; font-size: 13px;
+    display: grid; place-items: center;
+  }
+  .list-court { font-size: 14px; font-weight: 600; color: var(--court-deep); text-decoration: none; margin-right: 8px; }
+
+  /* ---------- Back link ---------- */
+  .backbar { max-width: 1120px; margin: 0 auto; padding: 22px 24px 0; }
+  .back-link { font-size: 14px; color: var(--ink-soft); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: color .15s; }
+  .back-link:hover { color: var(--court); }
+
+  /* ---------- Page grid ---------- */
+  .page {
+    display: grid; grid-template-columns: 1.4fr 1fr; gap: 28px;
+    max-width: 1120px; margin: 0 auto; padding: 16px 24px 64px;
+    align-items: start;
+  }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .card h2 { font-family: var(--display); font-size: 19px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 16px; }
+
+  /* ---------- Review card ---------- */
+  .booking-summary { display: flex; gap: 16px; }
+  .booking-summary img {
+    width: 104px; height: 104px; border-radius: 12px; object-fit: cover; flex: none;
+  }
+  .booking-title { font-family: var(--display); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; line-height: 1.3; }
+  .booking-when { font-size: 14px; color: var(--ink); margin-top: 6px; }
+  .booking-addr { font-size: 13px; color: var(--ink-soft); margin-top: 4px; }
+
+  .hold-banner {
+    display: flex; align-items: center; gap: 16px;
+    background: var(--band-off); border-radius: 12px; padding: 14px 18px; margin-top: 20px;
+  }
+  .hold-time { font-family: var(--mono); font-weight: 600; font-size: 26px; color: var(--court-deep); letter-spacing: -0.01em; }
+  .hold-copy { font-size: 13.5px; color: var(--ink-soft); }
+
+  .kicker {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--court); margin-top: 24px; margin-bottom: 10px;
+  }
+
+  .pay-methods { display: flex; flex-direction: column; gap: 10px; }
+  .pay-row {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+    height: var(--control-h); padding: 0 16px; border-radius: var(--btn-radius);
+    border: 1px solid var(--line); background: var(--panel); text-align: left;
+    transition: border-color .12s, border-width .12s;
+  }
+  .pay-row.selected { border: 1.5px solid var(--ink); padding: 0 15.5px; }
+  .pay-left { display: flex; align-items: center; gap: 12px; }
+  .radio {
+    width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--ink-soft);
+    background: var(--panel); flex: none;
+  }
+  .pay-row.selected .radio { border: 1.5px solid var(--ink); background: var(--ball); }
+  .pay-name { font-family: var(--display); font-weight: 600; font-size: 14.5px; }
+  .pay-fee { font-family: var(--mono); font-size: 13.5px; color: var(--ink-soft); }
+  .pay-row.selected .pay-fee { color: var(--ink); }
+
+  /* ---------- Price card ---------- */
+  .price-card { position: sticky; top: 84px; }
+  .line-item { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; padding: 7px 0; }
+  .line-item .amt { font-family: var(--mono); }
+  .line-item.muted { color: var(--ink-soft); }
+  .divider { border: none; border-top: 1px solid var(--line); margin: 8px 0; }
+  .line-item.subtotal { font-weight: 600; }
+  .fee-note { font-size: 12px; color: var(--ink-soft); margin-top: -3px; padding-bottom: 4px; }
+  .line-item.total { font-family: var(--display); font-weight: 700; font-size: 16px; padding-top: 10px; }
+  .line-item.total .amt { font-family: var(--mono); font-weight: 700; font-size: 20px; }
+
+  .pay-btn {
+    width: 100%; height: var(--btn-h); border-radius: var(--btn-radius);
+    background: var(--ball); color: var(--ball-ink);
+    font-family: var(--display); font-weight: 700; font-size: 15.5px;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 16px; transition: background .15s;
+  }
+  .pay-btn:hover { background: #DCF23E; }
+  .pay-btn:active { transform: scale(.98); }
+
+  .microcopy {
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); line-height: 1.5;
+    margin-top: 14px; text-align: center;
+  }
+  .secured {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 12px; color: var(--ink-soft); margin-top: 12px;
+  }
+  .secured svg { flex: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pay-btn, .pay-row, .back-link { transition: none; }
+  }
+
+  /* ---------- Footer (matches home.html) ---------- */
+  footer {
+    margin-top: 0; border-top: 1px solid var(--line);
+    padding: 28px max(24px, calc((100vw - 1120px) / 2)) 40px;
+    display: flex; gap: 24px; align-items: center; color: var(--ink-soft); font-size: 13px;
+  }
+  footer .wordmark { font-size: 18px; color: var(--ink); }
+  footer nav { display: flex; gap: 22px; flex: 1; }
+  footer a { color: var(--ink-soft); text-decoration: none; }
+  footer a:hover { color: var(--ink); }
+
+  @media (max-width: 980px) {
+    .nav { padding: 12px 16px; }
+    .nav-links { display: none; }
+    .backbar { padding: 18px 16px 0; }
+    .page { grid-template-columns: 1fr; gap: 20px; padding: 12px 16px 48px; }
+    .review-card { order: 2; }
+    .price-card { order: 1; position: static; }
+    .booking-summary img { width: 84px; height: 84px; }
+  }
+  @media (max-width: 560px) {
+    footer { flex-direction: column; align-items: flex-start; gap: 14px; }
+    footer nav { flex-wrap: wrap; }
+    .hold-banner { flex-wrap: wrap; }
+  }
+
+  /* ---------- Mockup page switcher (dev-only aid, not part of product UI) ---------- */
+  .mock-switcher { position: fixed; right: 24px; bottom: 24px; z-index: 9999; }
+  .mock-switcher summary {
+    list-style: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 38px; padding: 0 16px; border-radius: 12px;
+    background: var(--ink); color: #fff;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    box-shadow: 0 12px 32px rgba(12, 31, 22, .25);
+  }
+  .mock-switcher summary::marker { content: ""; }
+  .mock-switcher summary::-webkit-details-marker { display: none; }
+  .mock-switcher summary::after { content: "▾"; font-size: 9px; }
+  .mock-switcher[open] summary::after { content: "▴"; }
+  .mock-switcher .ms-panel {
+    position: absolute; right: 0; bottom: calc(100% + 10px);
+    width: 216px; background: var(--panel);
+    border: 1px solid var(--hairline, var(--line, #E5EAE2));
+    border-radius: 20px;
+    box-shadow: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05), 0 12px 32px rgba(12, 31, 22, .12);
+    padding: 8px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .mock-switcher .ms-row {
+    display: block; padding: 9px 12px; border-radius: 10px;
+    font-family: var(--body); font-size: 13px; font-weight: 500; color: var(--ink); text-decoration: none;
+  }
+  .mock-switcher a.ms-row:hover { background: var(--surface); }
+  .mock-switcher .ms-row.ms-current { background: var(--band-off, #EAF2E4); color: var(--court-deep); font-weight: 600; cursor: default; }
+</style>
+
+<nav class="nav">
+  <a class="wordmark" href="#">piko</a>
+  <div class="nav-links">
+    <a href="#">Find courts</a>
+    <a href="#" aria-current="page">My bookings</a>
+  </div>
+  <a class="list-court" href="#">List your court</a>
+  <span class="avatar">CY</span>
+</nav>
+
+<div class="backbar">
+  <a class="back-link" href="#">← Back to Palo Verde Pickle Club</a>
+</div>
+
+<main class="page">
+  <!-- ============ Left: review booking + payment method ============ -->
+  <section class="card review-card" aria-label="Review your booking">
+    <h2>Review your booking</h2>
+
+    <div class="booking-summary">
+      <img src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=70&w=500&auto=format&fit=crop" alt="Palo Verde Pickle Club court">
+      <div>
+        <div class="booking-title">Palo Verde Pickle Club — Court A2 (Indoor)</div>
+        <div class="booking-when">Fri, Aug 1 · 7 – 9 AM · 2 hours</div>
+        <div class="booking-addr">Apokon Rd, Tagum City</div>
+      </div>
+    </div>
+
+    <div class="hold-banner">
+      <span class="hold-time" id="holdTime">14:32</span>
+      <span class="hold-copy">We're holding these slots for you</span>
+    </div>
+
+    <div class="kicker">Payment method</div>
+    <div class="pay-methods" id="payMethods">
+      <button type="button" class="pay-row selected" data-method="GCash" data-fee="22.90" data-total="622.90">
+        <span class="pay-left"><span class="radio"></span><span class="pay-name">GCash</span></span>
+        <span class="pay-fee">+ ₱22.90</span>
+      </button>
+      <button type="button" class="pay-row" data-method="Maya" data-fee="18.40" data-total="618.40">
+        <span class="pay-left"><span class="radio"></span><span class="pay-name">Maya</span></span>
+        <span class="pay-fee">+ ₱18.40</span>
+      </button>
+      <button type="button" class="pay-row" data-method="Credit/Debit card" data-fee="33.10" data-total="633.10">
+        <span class="pay-left"><span class="radio"></span><span class="pay-name">Credit/Debit card</span></span>
+        <span class="pay-fee">+ ₱33.10</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ============ Right: price details (sticky) ============ -->
+  <section class="card price-card" aria-label="Price details">
+    <h2>Price details</h2>
+
+    <div class="line-item">
+      <span>Court A2 · 7–8 AM (off-peak)</span>
+      <span class="amt">₱300</span>
+    </div>
+    <div class="line-item">
+      <span>Court A2 · 8–9 AM (off-peak)</span>
+      <span class="amt">₱300</span>
+    </div>
+
+    <hr class="divider">
+
+    <div class="line-item subtotal">
+      <span>Court fees</span>
+      <span class="amt">₱600</span>
+    </div>
+    <div class="line-item">
+      <span id="feeLabel">Transaction fee (GCash)</span>
+      <span class="amt" id="feeAmt">₱22.90</span>
+    </div>
+    <div class="fee-note">Processor fee — based on your payment method</div>
+
+    <hr class="divider">
+
+    <div class="line-item total">
+      <span>Total due</span>
+      <span class="amt" id="totalAmt">₱622.90</span>
+    </div>
+
+    <button class="pay-btn" id="payBtn">Pay ₱622.90 with GCash</button>
+
+    <p class="microcopy">Slot confirmed the moment payment clears. No cancellations — double-check your schedule.</p>
+
+    <div class="secured">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="4" y="10" width="16" height="11" rx="2" stroke="currentColor" stroke-width="2"/>
+        <path d="M7 10V7a5 5 0 0 1 10 0v3" stroke="currentColor" stroke-width="2"/>
+      </svg>
+      <span>Secured by PayMongo</span>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <a class="wordmark" href="#">piko</a>
+  <nav>
+    <a href="#">Find courts</a>
+    <a href="#">List your court</a>
+    <a href="#">Help</a>
+    <a href="#">Terms</a>
+  </nav>
+  <span>© 2026 Piko · Philippines</span>
+</footer>
+
+<script>
+  // ---------- Cosmetic hold-timer countdown ----------
+  (function () {
+    let remaining = 14 * 60 + 32; // 14:32 in seconds
+    const el = document.getElementById('holdTime');
+    setInterval(() => {
+      if (remaining <= 0) return;
+      remaining -= 1;
+      const m = Math.floor(remaining / 60);
+      const s = remaining % 60;
+      el.textContent = `${m}:${String(s).padStart(2, '0')}`;
+    }, 1000);
+  })();
+
+  // ---------- Payment method selection ----------
+  (function () {
+    const rows = document.querySelectorAll('.pay-row');
+    const feeLabel = document.getElementById('feeLabel');
+    const feeAmt = document.getElementById('feeAmt');
+    const totalAmt = document.getElementById('totalAmt');
+    const payBtn = document.getElementById('payBtn');
+
+    function fmtMoney(value) {
+      const n = parseFloat(value);
+      return `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    rows.forEach(row => {
+      row.addEventListener('click', () => {
+        rows.forEach(r => r.classList.remove('selected'));
+        row.classList.add('selected');
+
+        const method = row.dataset.method;
+        const fee = row.dataset.fee;
+        const total = row.dataset.total;
+
+        feeLabel.textContent = `Transaction fee (${method})`;
+        feeAmt.textContent = fmtMoney(fee);
+        totalAmt.textContent = fmtMoney(total);
+        payBtn.textContent = `Pay ${fmtMoney(total)} with ${method}`;
+      });
+    });
+  })();
+</script>
+
+<details class="mock-switcher">
+  <summary>Pages</summary>
+  <div class="ms-panel">
+    <a class="ms-row" href="index.html">Index</a>
+    <a class="ms-row" href="home.html">Home</a>
+    <a class="ms-row" href="search-results.html">Search results</a>
+    <a class="ms-row" href="branch-page.html">Branch page</a>
+    <a class="ms-row" href="owner-profile.html">Owner profile</a>
+    <a class="ms-row" href="owner-dashboard.html">Owner dashboard</a>
+    <span class="ms-row ms-current">Checkout</span>
+    <a class="ms-row" href="admin-approvals.html">Admin approvals</a>
+  </div>
+</details>

@@ -1,0 +1,452 @@
+<!-- @dsCard group="Pages" name="Owner dashboard" -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Owner dashboard — Smash Zone · Piko</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #0C1F16;
+    --ink-soft: #5B6E60;
+    --surface: #FAFBF8;
+    --panel: #FFFFFF;
+    --hairline: #E5EAE2;
+    --court: #2E6B4F;
+    --court-deep: #143D2C;
+    --ball: #E8FF54;
+    --ball-ink: #232D00;
+    --booked: #E7ECE2;
+    --band-off: #EAF2E4;
+    --band-peak: #CDE3C2;
+    --display: "Inter Tight", "Inter", "Helvetica Neue", Arial, sans-serif;
+    --body: "Inter", "Helvetica Neue", Arial, sans-serif;
+    --mono: "Spline Sans Mono", "SF Mono", Menlo, monospace;
+    --shadow-sm: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05);
+    /* control sizing tokens (match home.html / branch-page.html) */
+    --control-h: 56px;   /* hero-level fields + primary button */
+    --btn-h: 48px;       /* standard buttons (CTAs) */
+    --btn-h-sm: 38px;    /* compact controls (icon buttons, slot cells, nav pill) */
+    --btn-radius: 12px;  /* one corner radius for all buttons & fields */
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { font-family: var(--body); background: var(--surface); color: var(--ink); font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; background: none; border: none; color: inherit; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--court); outline-offset: 2px; border-radius: 4px; }
+
+  /* ---------- Shell ---------- */
+  .app { display: flex; align-items: flex-start; min-height: 100vh; }
+
+  .sidebar {
+    width: 240px; flex: 0 0 240px; min-height: 100vh;
+    background: var(--panel); border-right: 1px solid var(--hairline);
+    display: flex; flex-direction: column; padding: 24px 16px;
+    position: sticky; top: 0;
+  }
+  .wordmark {
+    font-family: var(--display); font-weight: 800; font-size: 24px; letter-spacing: -0.03em;
+    display: flex; align-items: baseline; gap: 3px; color: var(--ink); text-decoration: none;
+    padding: 0 8px; margin-bottom: 28px;
+  }
+  .wordmark::after { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--ball); border: 1.5px solid var(--ink); }
+
+  .side-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+  .nav-item {
+    display: flex; align-items: center; gap: 11px;
+    height: var(--btn-h-sm); padding: 0 12px; border-radius: var(--btn-radius);
+    font-size: 14px; font-weight: 500; color: var(--ink-soft); text-decoration: none;
+    transition: background .15s, color .15s;
+  }
+  .nav-item svg { width: 18px; height: 18px; flex: none; }
+  .nav-item:hover { background: var(--surface); color: var(--ink); }
+  .nav-item.active { background: var(--band-off); color: var(--court-deep); font-weight: 600; }
+
+  .owner-chip {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 8px; margin-top: 16px; border-top: 1px solid var(--hairline);
+  }
+  .chip-avatar {
+    width: 36px; height: 36px; flex: none; border-radius: var(--btn-radius);
+    background: var(--court-deep); color: #fff;
+    font-family: var(--display); font-weight: 700; font-size: 13px;
+    display: grid; place-items: center;
+  }
+  .chip-label { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+  .chip-label strong { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+  .chip-label span { font-size: 12px; color: var(--ink-soft); }
+
+  .main { flex: 1; min-width: 0; max-width: 1120px; margin: 0 auto; padding: 24px; }
+
+  /* ---------- Top bar ---------- */
+  .topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+  .topbar h1 { font-family: var(--display); font-weight: 700; font-size: 26px; letter-spacing: -0.02em; flex: 1; min-width: 160px; }
+  .ctrl {
+    height: var(--control-h); display: inline-flex; align-items: center; gap: 6px;
+    background: var(--panel); border: 1px solid var(--hairline); border-radius: var(--btn-radius);
+    padding: 0 18px; font-family: var(--body); font-size: 14px; font-weight: 600; color: var(--ink);
+    white-space: nowrap;
+  }
+  .ctrl:hover { border-color: var(--court); }
+  .ctrl.sm { height: var(--btn-h-sm); padding: 0 14px; font-size: 13.5px; }
+  .btn-add {
+    font-family: var(--display); font-weight: 700; font-size: 14.5px;
+    background: var(--ink); color: var(--ball);
+    border-radius: var(--btn-radius); height: var(--btn-h);
+    display: inline-flex; align-items: center; padding: 0 22px; white-space: nowrap;
+    transition: background .15s;
+  }
+  .btn-add:hover { background: var(--court-deep); }
+  .btn-add:active { transform: scale(.98); }
+
+  /* ---------- Stat tiles ---------- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+  .stat-card { background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 20px; }
+  .stat-card .kicker {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft);
+  }
+  .stat-card .value { font-family: var(--mono); font-weight: 600; font-size: 27px; color: var(--ink); margin-top: 10px; }
+  .stat-card .delta { font-family: var(--mono); font-size: 12px; color: var(--court); margin-top: 6px; }
+
+  /* ---------- Two-column section ---------- */
+  .split { display: grid; grid-template-columns: 1.63fr 1fr; gap: 24px; margin-bottom: 28px; align-items: start; }
+
+  .panel-card { background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 20px; }
+  .panel-card h2 { font-family: var(--display); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; margin-bottom: 14px; }
+
+  /* ---------- Bookings calendar (adapted from branch-page .slots) ---------- */
+  .grid-scroll { overflow-x: auto; margin: 0 -4px; }
+  table.slots { border-collapse: collapse; width: 100%; min-width: 560px; }
+  .slots th, .slots td { border-bottom: 1px solid var(--hairline); }
+  .slots thead th {
+    position: sticky; top: 0; z-index: 2; background: var(--panel);
+    padding: 0 8px 10px; text-align: center;
+  }
+  .slots thead th:first-child { position: sticky; left: 0; z-index: 3; background: var(--panel); text-align: left; padding-left: 4px; }
+  .court-name { font-family: var(--display); font-weight: 700; font-size: 13px; display: block; }
+  .court-sub { font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+
+  .slots td.time {
+    width: 68px; padding: 0 10px 0 4px; white-space: nowrap;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-soft);
+    border-right: 1px solid var(--hairline);
+    position: sticky; left: 0; z-index: 1; background: var(--panel);
+  }
+  .slots td.cell { padding: 3px; text-align: center; height: 30px; }
+  .cell-fill {
+    width: 100%; height: 100%; min-height: 24px; border-radius: var(--btn-radius);
+    background: var(--band-off); color: var(--court-deep);
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    display: flex; align-items: center; justify-content: center;
+    padding: 2px 4px; overflow: hidden; white-space: nowrap;
+  }
+
+  /* ---------- Payouts card ---------- */
+  .payout-next { padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--hairline); }
+  .payout-next .row-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .payout-next .amt { font-family: var(--mono); font-weight: 600; font-size: 22px; }
+  .payout-next .sub { font-size: 13px; color: var(--ink-soft); margin-top: 4px; }
+  .pill {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
+    border-radius: 999px; padding: 4px 11px; white-space: nowrap;
+  }
+  .pill.scheduled { background: var(--band-off); color: var(--court-deep); }
+  .pill.paid { background: var(--surface); color: var(--ink-soft); border: 1px solid var(--hairline); }
+  .pill.pending { background: var(--band-peak); color: var(--court-deep); }
+
+  .payout-history { display: flex; flex-direction: column; gap: 10px; }
+  .payout-row { display: flex; align-items: center; gap: 10px; }
+  .payout-row .amt { font-family: var(--mono); font-size: 13.5px; font-weight: 500; }
+  .payout-row .date { font-size: 12.5px; color: var(--ink-soft); flex: 1; }
+
+  .pending-card { margin-top: 16px; }
+  .pending-card h2 { font-size: 14.5px; }
+  .pending-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .pending-row .info { font-size: 13.5px; }
+  .pending-row .info span { display: block; font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+
+  /* ---------- Recent activity ---------- */
+  .activity { background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 20px; }
+  .activity h2 { font-family: var(--display); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; margin-bottom: 6px; }
+  .activity-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--hairline); }
+  .activity-row:first-of-type { border-top: none; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.c-court { background: var(--court); }
+  .dot.c-ball { background: var(--ball); border: 1px solid var(--ink); }
+  .dot.c-muted { background: var(--ink-soft); opacity: .5; }
+  .activity-row time { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); flex: none; width: 66px; }
+  .activity-row p { font-size: 13.5px; color: var(--ink); }
+
+  @media (max-width: 980px) {
+    .app { flex-direction: column; }
+    .sidebar {
+      width: 100%; flex: none; min-height: auto; position: static;
+      flex-direction: row; align-items: center; gap: 4px;
+      border-right: none; border-bottom: 1px solid var(--hairline);
+      padding: 12px 16px; overflow-x: auto;
+    }
+    .wordmark { margin-bottom: 0; margin-right: 8px; }
+    .side-nav { flex-direction: row; flex: none; gap: 4px; }
+    .nav-item { white-space: nowrap; }
+    .owner-chip { margin-top: 0; margin-left: 8px; border-top: none; padding: 0; }
+    .main { padding: 20px 16px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .split { grid-template-columns: 1fr; }
+    .topbar h1 { font-size: 22px; }
+  }
+</style>
+
+<div class="app">
+  <aside class="sidebar">
+    <a class="wordmark" href="#">piko</a>
+    <nav class="side-nav">
+      <a class="nav-item active" href="#">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+        Overview
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+        Bookings
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 21V7l8-4 8 4v14"/><path d="M9 21v-6h6v6M9 11h.01M15 11h.01M9 15h.01M15 15h.01"/></svg>
+        Branches &amp; courts
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20V11M10 20V4M16 20v-6M21 20H3"/></svg>
+        Earnings
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l2.6 5.6 6.2.6-4.7 4.1 1.4 6.1L12 16.9 6.5 19.4l1.4-6.1L3.2 9.2l6.2-.6L12 3z"/></svg>
+        Reviews
+      </a>
+      <a class="nav-item" href="#">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.4M12 18.6V21M4.2 7.5l2.1 1.2M17.7 15.3l2.1 1.2M3 12h2.4M18.6 12H21M4.2 16.5l2.1-1.2M17.7 8.7l2.1-1.2"/></svg>
+        Settings
+      </a>
+    </nav>
+    <div class="owner-chip">
+      <span class="chip-avatar">SZ</span>
+      <div class="chip-label">
+        <strong>Smash Zone</strong>
+        <span>Owner</span>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h1>Overview</h1>
+      <button class="ctrl">All branches ▾</button>
+      <button class="ctrl sm">This week ▾</button>
+      <button class="btn-add">+ Add court</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat-card">
+        <span class="kicker">Bookings this week</span>
+        <div class="value">47</div>
+        <div class="delta">+12%</div>
+      </div>
+      <div class="stat-card">
+        <span class="kicker">Occupancy</span>
+        <div class="value">68%</div>
+      </div>
+      <div class="stat-card">
+        <span class="kicker">Gross revenue</span>
+        <div class="value">₱52,400</div>
+      </div>
+      <div class="stat-card">
+        <span class="kicker">Net after fees</span>
+        <div class="value">₱47,160</div>
+      </div>
+    </div>
+
+    <div class="split">
+      <section class="panel-card" aria-label="Today's bookings">
+        <h2>Today's bookings</h2>
+        <div class="grid-scroll">
+          <table class="slots">
+            <thead>
+              <tr>
+                <th scope="col"></th>
+                <th scope="col"><span class="court-name">Tagum</span><span class="court-sub">Court 1</span></th>
+                <th scope="col"><span class="court-name">Tagum</span><span class="court-sub">Court 2</span></th>
+                <th scope="col"><span class="court-name">Tagum</span><span class="court-sub">Court 3</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="time">6 AM</td>
+                <td class="cell"></td>
+                <td class="cell"><div class="cell-fill">R. Dela Cruz</div></td>
+                <td class="cell"></td>
+              </tr>
+              <tr>
+                <td class="time">7 AM</td>
+                <td class="cell"><div class="cell-fill">J. Reyes</div></td>
+                <td class="cell"><div class="cell-fill">R. Dela Cruz</div></td>
+                <td class="cell"><div class="cell-fill">K. Tan</div></td>
+              </tr>
+              <tr>
+                <td class="time">8 AM</td>
+                <td class="cell"><div class="cell-fill">J. Reyes</div></td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+              </tr>
+              <tr>
+                <td class="time">9 AM</td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+              </tr>
+              <tr>
+                <td class="time">10 AM</td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+                <td class="cell"><div class="cell-fill">M. Santos</div></td>
+              </tr>
+              <tr>
+                <td class="time">11 AM</td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+                <td class="cell"><div class="cell-fill">M. Santos</div></td>
+              </tr>
+              <tr>
+                <td class="time">12 PM</td>
+                <td class="cell"><div class="cell-fill">A. Cruz</div></td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+              </tr>
+              <tr>
+                <td class="time">1 PM</td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+              </tr>
+              <tr>
+                <td class="time">2 PM</td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+              </tr>
+              <tr>
+                <td class="time">3 PM</td>
+                <td class="cell"></td>
+                <td class="cell"><div class="cell-fill">L. Garcia</div></td>
+                <td class="cell"></td>
+              </tr>
+              <tr>
+                <td class="time">4 PM</td>
+                <td class="cell"></td>
+                <td class="cell"><div class="cell-fill">L. Garcia</div></td>
+                <td class="cell"><div class="cell-fill">N. Ramos</div></td>
+              </tr>
+              <tr>
+                <td class="time">5 PM</td>
+                <td class="cell"><div class="cell-fill">P. Villanueva</div></td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+              </tr>
+              <tr>
+                <td class="time">6 PM</td>
+                <td class="cell"><div class="cell-fill">P. Villanueva</div></td>
+                <td class="cell"></td>
+                <td class="cell"><div class="cell-fill">S. Mendoza</div></td>
+              </tr>
+              <tr>
+                <td class="time">7 PM</td>
+                <td class="cell"></td>
+                <td class="cell"><div class="cell-fill">E. Bautista</div></td>
+                <td class="cell"><div class="cell-fill">S. Mendoza</div></td>
+              </tr>
+              <tr>
+                <td class="time">8 PM</td>
+                <td class="cell"><div class="cell-fill">D. Aquino</div></td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+              </tr>
+              <tr>
+                <td class="time">9 PM</td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+                <td class="cell"><div class="cell-fill">F. Ocampo</div></td>
+              </tr>
+              <tr>
+                <td class="time">10 PM</td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+                <td class="cell"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <aside>
+        <section class="panel-card" aria-label="Payouts">
+          <h2>Payouts</h2>
+          <div class="payout-next">
+            <div class="row-top">
+              <span class="amt">₱47,160</span>
+              <span class="pill scheduled">Scheduled</span>
+            </div>
+            <div class="sub">via GCash · Fri, Aug 8</div>
+          </div>
+          <div class="payout-history">
+            <div class="payout-row">
+              <span class="amt">₱38,220</span>
+              <span class="date">Aug 1</span>
+              <span class="pill paid">Paid</span>
+            </div>
+            <div class="payout-row">
+              <span class="amt">₱41,890</span>
+              <span class="date">Jul 25</span>
+              <span class="pill paid">Paid</span>
+            </div>
+            <div class="payout-row">
+              <span class="amt">₱36,510</span>
+              <span class="date">Jul 18</span>
+              <span class="pill paid">Paid</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card pending-card" aria-label="Pending approval">
+          <h2>Pending approval</h2>
+          <div class="pending-row">
+            <div class="info">
+              Court 7 – Tagum
+              <span>Submitted Jul 30</span>
+            </div>
+            <span class="pill pending">Pending</span>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <section class="activity" aria-label="Recent activity">
+      <h2>Recent activity</h2>
+      <div class="activity-row">
+        <span class="dot c-court"></span>
+        <time>10:42 AM</time>
+        <p>New booking — J. Reyes booked Court 1, Tagum for 7 PM.</p>
+      </div>
+      <div class="activity-row">
+        <span class="dot c-ball"></span>
+        <time>9:15 AM</time>
+        <p>New review received — 4.8 rating from Anna R.</p>
+      </div>
+      <div class="activity-row">
+        <span class="dot c-muted"></span>
+        <time>7:02 AM</time>
+        <p>Booking completed — Court 1, Tagum, 6 – 7 AM session.</p>
+      </div>
+      <div class="activity-row">
+        <span class="dot c-court"></span>
+        <time>6:30 AM</time>
+        <p>Payout recorded — ₱38,220 sent via GCash.</p>
+      </div>
+    </section>
+  </main>
+</div>

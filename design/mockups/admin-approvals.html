@@ -1,0 +1,416 @@
+<!-- @dsCard group="Pages" name="Admin — approval queue" -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Approval queue — Piko Admin</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #0C1F16;
+    --ink-soft: #5B6E60;
+    --surface: #FAFBF8;
+    --panel: #FFFFFF;
+    --hairline: #E5EAE2;
+    --court: #2E6B4F;
+    --court-deep: #143D2C;
+    --ball: #E8FF54;
+    --ball-ink: #232D00;
+    --booked: #E7ECE2;
+    --band-off: #EAF2E4;
+    --band-peak: #CDE3C2;
+    --display: "Inter Tight", "Inter", "Helvetica Neue", Arial, sans-serif;
+    --body: "Inter", "Helvetica Neue", Arial, sans-serif;
+    --mono: "Spline Sans Mono", "SF Mono", Menlo, monospace;
+    --shadow-sm: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05);
+    --shadow-lg: 0 12px 32px rgba(12, 31, 22, .12);
+    /* control sizing tokens (match home.html / branding.md) */
+    --control-h: 56px;
+    --btn-h: 48px;
+    --btn-h-sm: 38px;
+    --btn-radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: var(--body); background: var(--surface); color: var(--ink);
+    font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; cursor: pointer; background: none; border: none; color: inherit; }
+  button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visible {
+    outline: 2px solid var(--court); outline-offset: 2px; border-radius: 6px;
+  }
+  img { max-width: 100%; display: block; }
+  a { text-decoration: none; }
+
+  /* ---------- Shell ---------- */
+  .shell { display: grid; grid-template-columns: 240px 1fr; align-items: start; min-height: 100vh; }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    background: var(--panel); border-right: 1px solid var(--hairline);
+    height: 100vh; position: sticky; top: 0;
+    display: flex; flex-direction: column; padding: 24px 18px;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 0 6px 22px; }
+  .wordmark {
+    font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -0.03em;
+    display: flex; align-items: baseline; gap: 3px; color: var(--ink);
+  }
+  .wordmark::after { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--ball); border: 1.5px solid var(--ink); }
+  .admin-tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-soft); background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: 999px; padding: 3px 8px;
+  }
+  .side-nav { display: flex; flex-direction: column; gap: 2px; }
+  .side-nav a {
+    display: flex; align-items: center; gap: 8px; color: var(--ink-soft); font-weight: 500; font-size: 14px;
+    padding: 11px 12px; border-radius: var(--btn-radius); transition: background .15s, color .15s;
+  }
+  .side-nav a:hover { background: var(--surface); color: var(--ink); }
+  .side-nav a.active { background: var(--band-off); color: var(--ink); font-weight: 600; }
+  .count-badge {
+    margin-left: auto; font-family: var(--mono); font-size: 11px; font-weight: 600;
+    background: var(--ink); color: var(--ball); border-radius: 999px;
+    min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px;
+  }
+
+  /* ---------- Main ---------- */
+  .main { padding: 32px max(24px, calc((100vw - 1200px) / 2)) 64px 32px; max-width: 1200px; }
+
+  .topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 16px 20px; margin-bottom: 26px; }
+  .topbar h1 { font-family: var(--display); font-weight: 800; font-size: 26px; letter-spacing: -0.025em; margin-right: auto; }
+
+  .filters { display: flex; gap: 8px; }
+  .pill {
+    font-family: var(--display); font-weight: 600; font-size: 13.5px; color: var(--ink-soft);
+    background: var(--panel); border: 1px solid var(--hairline); border-radius: 999px;
+    height: var(--btn-h-sm); padding: 0 16px; transition: background .15s, color .15s, border-color .15s;
+  }
+  .pill:hover { border-color: var(--court); color: var(--ink); }
+  .pill.active { background: var(--ink); border-color: var(--ink); color: var(--ball); }
+
+  .search {
+    width: 260px; max-width: 100%; height: var(--control-h);
+    background: var(--panel); border: 1px solid var(--hairline); border-radius: var(--btn-radius);
+    padding: 0 18px; font: inherit; font-size: 14.5px; color: var(--ink);
+  }
+  .search::placeholder { color: var(--ink-soft); }
+  .search:focus-visible { outline: 2px solid var(--court); outline-offset: 2px; }
+
+  /* ---------- Content grid ---------- */
+  .content-grid { display: grid; grid-template-columns: 1fr 300px; gap: 24px; align-items: start; }
+  .queue { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+  /* ---------- Approval card ---------- */
+  .approval-card {
+    background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 22px 24px;
+  }
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .court-id h2 {
+    font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: -0.015em; margin-bottom: 8px;
+  }
+  .owner-chip {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--ink-soft);
+  }
+  .chip-avatar {
+    width: 20px; height: 20px; border-radius: 5px; background: var(--court);
+    color: #fff; font-family: var(--mono); font-size: 9px; font-weight: 600;
+    display: grid; place-items: center; flex: none;
+  }
+  .card-meta { display: flex; align-items: center; gap: 10px; flex: none; }
+  .timestamp { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+  .status-chip {
+    font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    border-radius: 999px; padding: 5px 11px; color: var(--court-deep); white-space: nowrap;
+  }
+  .status-chip.new { background: var(--band-off); }
+  .status-chip.requeued { background: var(--band-peak); }
+
+  .card-detail {
+    display: grid; grid-template-columns: auto 1fr; gap: 18px; margin: 18px 0; align-items: start;
+  }
+  .thumbs { display: flex; gap: 8px; }
+  .thumbs img {
+    width: 96px; height: 72px; object-fit: cover; border-radius: 10px; flex: none;
+  }
+  .facts { display: grid; gap: 8px; font-family: var(--mono); font-size: 12.5px; }
+  .facts > div { display: grid; grid-template-columns: 84px 1fr; gap: 10px; }
+  .facts dt { color: var(--ink-soft); text-transform: uppercase; letter-spacing: .06em; font-size: 10.5px; padding-top: 2px; }
+  .facts dd { color: var(--ink); }
+  .rate-diff { margin-top: 2px; }
+  .rate-diff .old { color: var(--ink-soft); text-decoration: line-through; }
+  .rate-diff .new { color: var(--court-deep); font-weight: 600; }
+
+  .card-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .btn-approve, .btn-reject, .btn-confirm-reject {
+    font-family: var(--display); font-weight: 700; font-size: 14.5px;
+    height: var(--btn-h); border-radius: var(--btn-radius);
+    display: inline-flex; align-items: center; padding: 0 22px; transition: filter .15s, transform .15s, background .15s;
+  }
+  .btn-approve { background: var(--ink); color: var(--ball); }
+  .btn-approve:hover { background: var(--court-deep); }
+  .btn-approve:active { transform: scale(.98); }
+  .btn-reject {
+    background: var(--panel); border: 1px solid var(--hairline); color: var(--ink);
+  }
+  .btn-reject:hover { border-color: var(--court); }
+  .link-branch {
+    font-size: 13.5px; font-weight: 600; color: var(--court); margin-left: auto;
+  }
+  .link-branch:hover { color: var(--court-deep); }
+
+  /* ---------- Rejection expanded state ---------- */
+  .reject-form { border-top: 1px solid var(--hairline); padding-top: 18px; margin-top: 4px; }
+  .reject-form textarea {
+    width: 100%; min-height: 84px; resize: vertical; font: inherit; font-size: 14px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--btn-radius);
+    padding: 14px 16px;
+  }
+  .reject-form textarea::placeholder { color: var(--ink-soft); }
+  .helper-note { font-size: 12.5px; color: var(--ink-soft); margin-top: 8px; }
+  .reject-actions { display: flex; align-items: center; gap: 16px; margin-top: 14px; }
+  .btn-confirm-reject { background: var(--panel); border: 1.5px solid var(--ink); color: var(--ink); }
+  .btn-confirm-reject:hover { background: var(--surface); }
+  .link-cancel { font-size: 13.5px; font-weight: 600; color: var(--ink-soft); }
+  .link-cancel:hover { color: var(--ink); }
+
+  /* ---------- Right rail ---------- */
+  .right-rail { display: flex; flex-direction: column; gap: 18px; position: sticky; top: 32px; }
+  .rail-card {
+    background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 20px 22px;
+  }
+  .rail-title {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--court); margin-bottom: 14px;
+  }
+  .stat-line { font-size: 14px; color: var(--ink-soft); padding: 5px 0; }
+  .stat-line .stat-num {
+    font-family: var(--mono); font-weight: 600; font-size: 20px; color: var(--ink); margin-right: 6px;
+  }
+
+  .fee-row {
+    display: flex; align-items: baseline; justify-content: space-between; font-size: 13.5px;
+    color: var(--ink-soft); padding: 7px 0; border-bottom: 1px solid var(--hairline);
+  }
+  .fee-row .fee-val { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+  .edit-link {
+    display: inline-block; margin-top: 12px; font-size: 13.5px; font-weight: 600; color: var(--court);
+  }
+  .edit-link:hover { color: var(--court-deep); }
+  .override-row {
+    margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hairline);
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  }
+  .override-row span:first-child { font-size: 13px; color: var(--ink); font-weight: 500; }
+  .override-chip {
+    font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: .08em;
+    background: var(--band-peak); color: var(--court-deep); border-radius: 999px; padding: 4px 9px; white-space: nowrap;
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 980px) {
+    .shell { grid-template-columns: 1fr; }
+    .sidebar {
+      position: static; height: auto; width: 100%; border-right: none; border-bottom: 1px solid var(--hairline);
+      flex-direction: row; align-items: center; padding: 14px 16px; overflow-x: auto;
+    }
+    .brand { padding: 0 16px 0 0; flex: none; }
+    .side-nav { flex-direction: row; gap: 4px; }
+    .side-nav a { white-space: nowrap; }
+    .count-badge { margin-left: 6px; }
+    .main { padding: 24px 16px 48px; max-width: 100%; }
+    .content-grid { grid-template-columns: 1fr; }
+    .right-rail { position: static; }
+    .card-detail { grid-template-columns: 1fr; }
+    .thumbs img { width: auto; flex: 1; height: 88px; }
+  }
+  @media (max-width: 560px) {
+    .topbar h1 { font-size: 22px; }
+    .search { width: 100%; }
+    .card-actions { flex-direction: column; align-items: stretch; }
+    .link-branch { margin-left: 0; text-align: center; }
+    .thumbs { flex-direction: column; }
+    .thumbs img { width: 100%; height: 120px; }
+  }
+</style>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <a class="wordmark" href="#">piko</a>
+      <span class="admin-tag">admin</span>
+    </div>
+    <nav class="side-nav">
+      <a href="#" class="active">Approval queue<span class="count-badge">4</span></a>
+      <a href="#">Branches &amp; courts</a>
+      <a href="#">Users</a>
+      <a href="#">Bookings</a>
+      <a href="#">Payouts</a>
+      <a href="#">Fee settings</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h1>Approval queue</h1>
+      <div class="filters">
+        <button class="pill active">All</button>
+        <button class="pill">New</button>
+        <button class="pill">Re-queued</button>
+      </div>
+      <input class="search" type="text" placeholder="Search courts or owners…">
+    </div>
+
+    <div class="content-grid">
+      <div class="queue">
+
+        <!-- Card 1 — NEW -->
+        <article class="approval-card">
+          <div class="card-head">
+            <div class="court-id">
+              <h2>Court 7 — Smash Zone – Tagum</h2>
+              <span class="owner-chip"><span class="chip-avatar">SZ</span>Smash Zone</span>
+            </div>
+            <div class="card-meta">
+              <span class="timestamp">2h ago</span>
+              <span class="status-chip new">NEW</span>
+            </div>
+          </div>
+          <div class="card-detail">
+            <div class="thumbs">
+              <img src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=70&w=400&auto=format&fit=crop" alt="Court 7 photo 1">
+              <img src="https://images.unsplash.com/photo-1756477558468-b3e485757470?q=70&w=400&auto=format&fit=crop" alt="Court 7 photo 2">
+            </div>
+            <dl class="facts">
+              <div><dt>Surface</dt><dd>Indoor · Cushioned acrylic</dd></div>
+              <div><dt>Rates</dt><dd>₱300 (6 AM–4 PM) · ₱350 (4–10 PM)</dd></div>
+              <div><dt>Hours</dt><dd>6 AM – 10 PM daily</dd></div>
+            </dl>
+          </div>
+          <div class="card-actions">
+            <button class="btn-approve">Approve</button>
+            <button class="btn-reject">Reject…</button>
+            <a class="link-branch" href="#">View branch →</a>
+          </div>
+        </article>
+
+        <!-- Card 2 — NEW -->
+        <article class="approval-card">
+          <div class="card-head">
+            <div class="court-id">
+              <h2>Court 3 — Rally Republic – Davao</h2>
+              <span class="owner-chip"><span class="chip-avatar">RR</span>Rally Republic</span>
+            </div>
+            <div class="card-meta">
+              <span class="timestamp">5h ago</span>
+              <span class="status-chip new">NEW</span>
+            </div>
+          </div>
+          <div class="card-detail">
+            <div class="thumbs">
+              <img src="https://images.unsplash.com/photo-1756477558468-b3e485757470?q=70&w=400&auto=format&fit=crop" alt="Court 3 photo 1">
+              <img src="https://images.unsplash.com/photo-1693142518820-78d7a05f1546?q=70&w=400&auto=format&fit=crop" alt="Court 3 photo 2">
+            </div>
+            <dl class="facts">
+              <div><dt>Surface</dt><dd>Outdoor · Textured concrete</dd></div>
+              <div><dt>Rates</dt><dd>₱250 (6 AM–4 PM) · ₱300 (4–9 PM)</dd></div>
+              <div><dt>Hours</dt><dd>6 AM – 9 PM daily</dd></div>
+            </dl>
+          </div>
+          <div class="card-actions">
+            <button class="btn-approve">Approve</button>
+            <button class="btn-reject">Reject…</button>
+            <a class="link-branch" href="#">View branch →</a>
+          </div>
+        </article>
+
+        <!-- Card 3 — RE-QUEUED · rate change -->
+        <article class="approval-card">
+          <div class="card-head">
+            <div class="court-id">
+              <h2>Court 2 — Palo Verde Pickle Club – Tagum</h2>
+              <span class="owner-chip"><span class="chip-avatar">PV</span>Palo Verde Pickle Club</span>
+            </div>
+            <div class="card-meta">
+              <span class="timestamp">Yesterday</span>
+              <span class="status-chip requeued">RE-QUEUED · rate change</span>
+            </div>
+          </div>
+          <div class="card-detail">
+            <div class="thumbs">
+              <img src="https://images.unsplash.com/photo-1693142518820-78d7a05f1546?q=70&w=400&auto=format&fit=crop" alt="Court 2 photo 1">
+              <img src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=70&w=400&auto=format&fit=crop" alt="Court 2 photo 2">
+            </div>
+            <dl class="facts">
+              <div><dt>Surface</dt><dd>Indoor · Cushioned acrylic</dd></div>
+              <div><dt>Rates</dt><dd>₱280 (6 AM–4 PM) · ₱300 (4–10 PM)</dd></div>
+              <div><dt>Change</dt><dd class="rate-diff"><span class="old">₱300</span> → <span class="new">₱350</span> peak</dd></div>
+              <div><dt>Hours</dt><dd>6 AM – 10 PM daily</dd></div>
+            </dl>
+          </div>
+          <div class="card-actions">
+            <button class="btn-approve">Approve</button>
+            <button class="btn-reject">Reject…</button>
+            <a class="link-branch" href="#">View branch →</a>
+          </div>
+        </article>
+
+        <!-- Card 4 — NEW, expanded rejection state -->
+        <article class="approval-card">
+          <div class="card-head">
+            <div class="court-id">
+              <h2>Court 1 — Dinky’s Yard – Visayan Village</h2>
+              <span class="owner-chip"><span class="chip-avatar">DY</span>Dinky’s Yard</span>
+            </div>
+            <div class="card-meta">
+              <span class="timestamp">20m ago</span>
+              <span class="status-chip new">NEW</span>
+            </div>
+          </div>
+          <div class="card-detail">
+            <div class="thumbs">
+              <img src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=70&w=400&auto=format&fit=crop" alt="Court 1 photo 1">
+              <img src="https://images.unsplash.com/photo-1693142518820-78d7a05f1546?q=70&w=400&auto=format&fit=crop" alt="Court 1 photo 2">
+            </div>
+            <dl class="facts">
+              <div><dt>Surface</dt><dd>Indoor · Cushioned acrylic</dd></div>
+              <div><dt>Rates</dt><dd>₱320 (6 AM–4 PM) · ₱360 (4–10 PM)</dd></div>
+              <div><dt>Hours</dt><dd>6 AM – 10 PM daily</dd></div>
+            </dl>
+          </div>
+          <div class="reject-form">
+            <textarea placeholder="Reason shown to the owner…"></textarea>
+            <p class="helper-note">Owner gets this by email</p>
+            <div class="reject-actions">
+              <button class="btn-confirm-reject">Confirm rejection</button>
+              <a class="link-cancel" href="#">Cancel</a>
+            </div>
+          </div>
+        </article>
+
+      </div>
+
+      <aside class="right-rail">
+        <div class="rail-card">
+          <div class="rail-title">Today</div>
+          <div class="stat-line"><span class="stat-num">12</span>approved</div>
+          <div class="stat-line"><span class="stat-num">1</span>rejected</div>
+          <div class="stat-line"><span class="stat-num">4</span>pending</div>
+        </div>
+
+        <div class="rail-card">
+          <div class="rail-title">Fee settings</div>
+          <div class="fee-row"><span>Platform fee</span><span class="fee-val">10%</span></div>
+          <div class="fee-row" style="border-bottom:none;"><span>Processor fee</span><span class="fee-val">Platform pays</span></div>
+          <a class="edit-link" href="#">Edit →</a>
+          <div class="override-row">
+            <span>Smash Zone: 8% · owner pays fees</span>
+            <span class="override-chip">OVERRIDE</span>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>

@@ -1,0 +1,425 @@
+<!-- @dsCard group="Pages" name="Homepage" -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Piko — Find and book pickleball courts</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #0C1F16;
+    --ink-soft: #5B6E60;
+    --surface: #FAFBF8;
+    --panel: #FFFFFF;
+    --hairline: #E5EAE2;
+    --court: #2E6B4F;
+    --court-deep: #143D2C;
+    --ball: #E8FF54;
+    --ball-ink: #232D00;
+    --glass: rgba(255, 255, 255, .09);
+    --glass-line: rgba(255, 255, 255, .18);
+    --display: "Inter Tight", "Inter", "Helvetica Neue", Arial, sans-serif;
+    --body: "Inter", "Helvetica Neue", Arial, sans-serif;
+    --mono: "Spline Sans Mono", "SF Mono", Menlo, monospace;
+    --shadow-sm: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05);
+    --shadow-lg: 0 12px 32px rgba(12, 31, 22, .12);
+    /* control sizing tokens */
+    --control-h: 56px;   /* hero search fields + primary search button */
+    --btn-h: 48px;       /* standard buttons (CTAs) */
+    --btn-h-sm: 38px;    /* compact controls (nav pill, icon buttons) */
+    --btn-radius: 12px;  /* one corner radius for all buttons & fields */
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--body); background: var(--surface); color: var(--ink); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; background: none; border: none; color: inherit; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--ball); outline-offset: 3px; border-radius: 6px; }
+  img { max-width: 100%; display: block; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- Nav: floating glass ---------- */
+  .nav {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+    display: flex; align-items: center; gap: 34px;
+    padding: 20px max(24px, calc((100vw - 1120px) / 2));
+  }
+  .wordmark {
+    font-family: var(--display); font-weight: 800; font-size: 25px; letter-spacing: -0.03em;
+    display: flex; align-items: baseline; gap: 3px; color: #fff; text-decoration: none;
+  }
+  .wordmark::after { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--ball); }
+  .nav-links { display: flex; gap: 28px; margin-left: 10px; flex: 1; }
+  .nav-links a { color: rgba(255,255,255,.72); text-decoration: none; font-weight: 500; font-size: 14px; transition: color .15s; }
+  .nav-links a:hover, .nav-links a[aria-current] { color: #fff; }
+  .list-court {
+    font-size: 13.5px; font-weight: 600; color: #fff; text-decoration: none;
+    border: 1px solid var(--glass-line); background: var(--glass);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-radius: var(--btn-radius); transition: background .15s;
+    display: inline-flex; align-items: center; height: var(--btn-h-sm); padding: 0 18px;
+  }
+  .list-court:hover { background: rgba(255,255,255,.16); }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--court);
+    color: #fff; font-weight: 600; font-size: 12.5px;
+    display: grid; place-items: center; border: 1px solid var(--glass-line);
+  }
+
+  /* ---------- Hero ---------- */
+  .hero { position: relative; overflow: hidden; padding: 148px 0 88px; }
+  .hero .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 62%; }
+  .hero::after {
+    content: ""; position: absolute; inset: 0;
+    background: rgba(6, 20, 13, .68);
+  }
+  .hero-inner { position: relative; z-index: 1; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .16em; text-transform: uppercase;
+    color: rgba(255,255,255,.66); display: inline-flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::before { content: ""; width: 22px; height: 1px; background: var(--ball); }
+  h1 {
+    font-family: var(--display); font-weight: 700; font-size: 68px; line-height: 1.0; letter-spacing: -0.035em;
+    margin: 18px 0 18px; color: #fff; max-width: 900px;
+  }
+  h1 .accent { color: var(--ball); }
+  .lede { font-size: 17px; color: rgba(255,255,255,.75); max-width: 560px; font-weight: 400; }
+
+  /* search: one frosted bar, hairline-divided segments */
+  .search-bar {
+    margin-top: 44px;
+    display: grid; grid-template-columns: 1.25fr 1fr 1fr auto; align-items: center;
+    background: var(--glass);
+    border: 1px solid var(--glass-line);
+    backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    border-radius: 20px; padding: 8px;
+    box-shadow: 0 24px 48px rgba(6, 20, 13, .35);
+  }
+  .seg {
+    height: var(--control-h); display: flex; flex-direction: column; justify-content: center;
+    padding: 0 22px; border-radius: var(--btn-radius); transition: background .15s; position: relative;
+  }
+  .seg:hover { background: rgba(255,255,255,.07); }
+  .seg + .seg::before {
+    content: ""; position: absolute; left: 0; top: 18%; bottom: 18%;
+    width: 1px; background: var(--glass-line);
+  }
+  .seg label {
+    display: block; font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
+    text-transform: uppercase; color: rgba(255,255,255,.55); margin-bottom: 3px;
+  }
+  .seg .val { color: #fff; font-weight: 600; font-size: 15.5px; white-space: nowrap; }
+  .search-btn {
+    font-family: var(--display); font-weight: 700; font-size: 15.5px; letter-spacing: -0.01em;
+    background: var(--ball); color: var(--ball-ink);
+    border-radius: var(--btn-radius); margin-left: 8px;
+    height: var(--control-h); display: inline-flex; align-items: center; padding: 0 30px;
+    transition: filter .15s, transform .15s;
+  }
+  .search-btn:hover { filter: brightness(1.06); }
+  .search-btn:active { transform: scale(.98); }
+  .search-hint { margin-top: 16px; font-size: 13px; color: rgba(255,255,255,.6); }
+  .search-hint b { color: var(--ball); font-weight: 600; }
+
+  /* ---------- Sections ---------- */
+  section { padding: 72px 0 0; }
+  .sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 28px; }
+  .sec-head .kicker {
+    display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--court); margin-bottom: 8px;
+  }
+  .sec-head h2 { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: -0.025em; }
+  .sec-head > div { flex: 1; }
+  .sec-head a { font-size: 14px; font-weight: 600; color: var(--court); text-decoration: none; white-space: nowrap; }
+  .sec-head a:hover { color: var(--court-deep); }
+
+  /* venue cards — borderless, soft */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .vcard {
+    background: var(--panel); border-radius: 20px; overflow: hidden;
+    text-decoration: none; color: var(--ink); display: block;
+    box-shadow: var(--shadow-sm);
+    transition: transform .22s cubic-bezier(.2,.7,.3,1), box-shadow .22s;
+  }
+  .vcard:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .vcard .photo { position: relative; aspect-ratio: 16 / 10; overflow: hidden; }
+  .vcard .photo img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s cubic-bezier(.2,.7,.3,1); }
+  .vcard:hover .photo img { transform: scale(1.045); }
+  .next-open {
+    position: absolute; left: 12px; bottom: 12px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em;
+    background: rgba(6, 20, 13, .62); color: var(--ball);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(232,255,84,.25);
+    border-radius: 999px; padding: 5px 12px;
+  }
+  .vcard .body { padding: 18px 20px 20px; }
+  .vcard h3 { font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: -0.015em; }
+  .vmeta { display: flex; gap: 6px 10px; flex-wrap: wrap; font-size: 13px; color: var(--ink-soft); margin-top: 5px; }
+  .vmeta .rating { color: var(--ink); font-weight: 600; }
+  .vmeta .rating::before {
+    content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ball); outline: 1.5px solid var(--ink); outline-offset: 1px; margin: 0 7px 1px 1px;
+  }
+  .vfoot { display: flex; align-items: center; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+  .vfoot .price { font-family: var(--mono); font-weight: 500; font-size: 15px; flex: 1; }
+  .vfoot .price small { font-family: var(--body); color: var(--ink-soft); font-size: 12.5px; }
+  .courts-tag { font-size: 12px; color: var(--court); font-weight: 600; }
+
+  /* steps — flat, hairline-ruled, airy */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
+  .step { border-top: 1px solid var(--ink); padding-top: 18px; }
+  .step .n { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--court); }
+  .step h3 { font-family: var(--display); font-weight: 700; font-size: 19px; letter-spacing: -0.015em; margin: 10px 0 8px; }
+  .step p { font-size: 14px; color: var(--ink-soft); }
+
+  /* owner CTA — solid deep green */
+  .owner-cta {
+    margin: 84px 0 0; border-radius: 28px;
+    background: var(--court-deep);
+    color: #DCE9DC;
+    padding: 56px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap;
+  }
+  .owner-cta .txt { flex: 1; min-width: 300px; }
+  .owner-cta .kicker {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ball); display: block; margin-bottom: 12px;
+  }
+  .owner-cta h2 { font-family: var(--display); font-weight: 700; font-size: 34px; letter-spacing: -0.025em; color: #fff; max-width: 520px; }
+  .owner-cta p { margin-top: 12px; max-width: 500px; color: rgba(220, 233, 220, .75); font-size: 15px; }
+  .cta-btn {
+    font-family: var(--display); font-weight: 700; font-size: 15.5px;
+    background: var(--ball); color: var(--ball-ink);
+    border-radius: var(--btn-radius); height: var(--btn-h);
+    display: inline-flex; align-items: center; padding: 0 34px;
+    transition: filter .15s, transform .15s;
+  }
+  .cta-btn:hover { filter: brightness(1.06); }
+  .cta-btn:active { transform: scale(.98); }
+
+  footer {
+    margin-top: 72px; border-top: 1px solid var(--hairline);
+    padding: 28px max(24px, calc((100vw - 1120px) / 2)) 40px;
+    display: flex; gap: 24px; align-items: center; color: var(--ink-soft); font-size: 13px;
+  }
+  footer .wordmark { font-size: 18px; color: var(--ink); }
+  footer .wordmark::after { border: 1.5px solid var(--ink); }
+  footer nav { display: flex; gap: 22px; flex: 1; }
+  footer a { color: var(--ink-soft); text-decoration: none; }
+  footer a:hover { color: var(--ink); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .vcard, .vcard .photo img, .search-btn, .cta-btn { transition: none; }
+  }
+  @media (max-width: 980px) {
+    h1 { font-size: 44px; }
+    .hero { padding: 112px 0 56px; }
+    .nav-links { display: none; }
+    .search-bar { grid-template-columns: 1fr 1fr; gap: 6px; }
+    .seg + .seg::before { display: none; }
+    .seg:first-child { grid-column: span 2; }
+    .search-btn { grid-column: span 2; margin: 2px 0 0; justify-content: center; }
+    .cards, .steps { grid-template-columns: 1fr; }
+    .owner-cta { padding: 32px; }
+  }
+  @media (max-width: 560px) {
+    h1 { font-size: 38px; letter-spacing: -0.03em; }
+    .lede { font-size: 15.5px; }
+    section { padding: 56px 0 0; }
+    .sec-head { flex-wrap: wrap; gap: 10px; }
+    .sec-head h2 { font-size: 24px; }
+    .owner-cta { margin-top: 64px; }
+    .owner-cta h2 { font-size: 26px; }
+    .cta-btn { width: 100%; justify-content: center; }
+    footer { flex-direction: column; align-items: flex-start; gap: 14px; }
+    footer nav { flex-wrap: wrap; }
+  }
+
+  /* ---------- Mockup page switcher (dev-only aid, not part of product UI) ---------- */
+  .mock-switcher { position: fixed; right: 24px; bottom: 24px; z-index: 9999; }
+  .mock-switcher summary {
+    list-style: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 38px; padding: 0 16px; border-radius: 12px;
+    background: var(--ink); color: #fff;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    box-shadow: 0 12px 32px rgba(12, 31, 22, .25);
+  }
+  .mock-switcher summary::marker { content: ""; }
+  .mock-switcher summary::-webkit-details-marker { display: none; }
+  .mock-switcher summary::after { content: "▾"; font-size: 9px; }
+  .mock-switcher[open] summary::after { content: "▴"; }
+  .mock-switcher .ms-panel {
+    position: absolute; right: 0; bottom: calc(100% + 10px);
+    width: 216px; background: var(--panel);
+    border: 1px solid var(--hairline, var(--line, #E5EAE2));
+    border-radius: 20px;
+    box-shadow: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05), 0 12px 32px rgba(12, 31, 22, .12);
+    padding: 8px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .mock-switcher .ms-row {
+    display: block; padding: 9px 12px; border-radius: 10px;
+    font-family: var(--body); font-size: 13px; font-weight: 500; color: var(--ink); text-decoration: none;
+  }
+  .mock-switcher a.ms-row:hover { background: var(--surface); }
+  .mock-switcher .ms-row.ms-current { background: var(--band-off, #EAF2E4); color: var(--court-deep); font-weight: 600; cursor: default; }
+</style>
+
+<nav class="nav">
+  <a class="wordmark" href="#">piko</a>
+  <div class="nav-links">
+    <a href="#" aria-current="page">Find courts</a>
+    <a href="#">My bookings</a>
+  </div>
+  <a class="list-court" href="#">List your court</a>
+  <span class="avatar">CY</span>
+</nav>
+
+<header class="hero">
+  <img class="bg" src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=75&w=1800&auto=format&fit=crop" alt="" aria-hidden="true">
+  <div class="wrap hero-inner">
+    <span class="eyebrow">Pickleball courts · Philippines</span>
+    <h1>Pick a time. Pick a court.<br><span class="accent">Laro na.</span></h1>
+    <p class="lede">Every court near you on one live grid — real prices, instant booking, paid with GCash, Maya, or card.</p>
+
+    <form class="search-bar" aria-label="Search courts">
+      <div class="seg">
+        <label>Where</label>
+        <div class="val">Near me · Tagum City</div>
+      </div>
+      <div class="seg">
+        <label>Date</label>
+        <div class="val">Fri, Aug 1</div>
+      </div>
+      <div class="seg">
+        <label>Time</label>
+        <div class="val">6 – 8 PM</div>
+      </div>
+      <button class="search-btn" type="button">Find open courts</button>
+    </form>
+    <p class="search-hint"><b>23 courts</b> open near you this evening</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section aria-label="Courts near you">
+    <div class="sec-head">
+      <div>
+        <span class="kicker">Live availability</span>
+        <h2>Open near you tonight</h2>
+      </div>
+      <a href="#">See all courts →</a>
+    </div>
+    <div class="cards">
+      <a class="vcard" href="#">
+        <div class="photo">
+          <img src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=70&w=700&auto=format&fit=crop" alt="Palo Verde Pickle Club outdoor courts">
+          <span class="next-open">Next open · 6 PM</span>
+        </div>
+        <div class="body">
+          <h3>Palo Verde Pickle Club</h3>
+          <div class="vmeta">
+            <span class="rating">4.8</span><span>(132)</span><span>·</span><span>Apokon, Tagum City</span><span>·</span><span>1.9 km</span>
+          </div>
+          <div class="vfoot">
+            <span class="price">from ₱200<small>/hr</small></span>
+            <span class="courts-tag">4 indoor · 2 outdoor</span>
+          </div>
+        </div>
+      </a>
+      <a class="vcard" href="#">
+        <div class="photo">
+          <img src="https://images.unsplash.com/photo-1756477558468-b3e485757470?q=70&w=700&auto=format&fit=crop" alt="Rally Republic indoor court">
+          <span class="next-open">Next open · 7 PM</span>
+        </div>
+        <div class="body">
+          <h3>Rally Republic</h3>
+          <div class="vmeta">
+            <span class="rating">4.6</span><span>(98)</span><span>·</span><span>Magugpo East</span><span>·</span><span>3.2 km</span>
+          </div>
+          <div class="vfoot">
+            <span class="price">from ₱250<small>/hr</small></span>
+            <span class="courts-tag">3 indoor</span>
+          </div>
+        </div>
+      </a>
+      <a class="vcard" href="#">
+        <div class="photo">
+          <img src="https://images.unsplash.com/photo-1693142518820-78d7a05f1546?q=70&w=700&auto=format&fit=crop" alt="Paddles at Dinky's Yard">
+          <span class="next-open">Next open · 6 PM</span>
+        </div>
+        <div class="body">
+          <h3>Dinky’s Yard</h3>
+          <div class="vmeta">
+            <span class="rating">4.9</span><span>(64)</span><span>·</span><span>Visayan Village</span><span>·</span><span>4.5 km</span>
+          </div>
+          <div class="vfoot">
+            <span class="price">from ₱180<small>/hr</small></span>
+            <span class="courts-tag">2 outdoor</span>
+          </div>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <section aria-label="How it works">
+    <div class="sec-head">
+      <div>
+        <span class="kicker">How it works</span>
+        <h2>Three steps to game time</h2>
+      </div>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <span class="n">01 — Search</span>
+        <h3>Find your slot</h3>
+        <p>Tell us when and where you want to play. Every open court nearby, with live availability and real prices.</p>
+      </div>
+      <div class="step">
+        <span class="n">02 — Book</span>
+        <h3>Pay online, locked in</h3>
+        <p>Pick your court and hours, pay with GCash, Maya, or card. Your slot is confirmed the moment payment clears.</p>
+      </div>
+      <div class="step">
+        <span class="n">03 — Play</span>
+        <h3>Show up and play</h3>
+        <p>Your confirmation is your court pass. We remind you on game day — just bring your paddle.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="owner-cta" aria-label="For court owners">
+    <div class="txt">
+      <span class="kicker">For court owners</span>
+      <h2>May court ka? Fill your off-peak hours.</h2>
+      <p>List every court and branch you run, set your own rates by time of day, and get bookings paid upfront. Free to list — we only earn when you do.</p>
+    </div>
+    <button class="cta-btn">List your court</button>
+  </section>
+</main>
+
+<footer>
+  <a class="wordmark" href="#">piko</a>
+  <nav>
+    <a href="#">Find courts</a>
+    <a href="#">List your court</a>
+    <a href="#">Help</a>
+    <a href="#">Terms</a>
+  </nav>
+  <span>© 2026 Piko · Philippines</span>
+</footer>
+
+<details class="mock-switcher">
+  <summary>Pages</summary>
+  <div class="ms-panel">
+    <a class="ms-row" href="index.html">Index</a>
+    <span class="ms-row ms-current">Home</span>
+    <a class="ms-row" href="search-results.html">Search results</a>
+    <a class="ms-row" href="branch-page.html">Branch page</a>
+    <a class="ms-row" href="owner-profile.html">Owner profile</a>
+    <a class="ms-row" href="owner-dashboard.html">Owner dashboard</a>
+    <a class="ms-row" href="checkout.html">Checkout</a>
+    <a class="ms-row" href="admin-approvals.html">Admin approvals</a>
+  </div>
+</details>

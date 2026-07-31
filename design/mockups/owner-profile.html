@@ -1,0 +1,431 @@
+<!-- @dsCard group="Pages" name="Owner profile (brand page)" -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smash Zone — Piko</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #0C1F16;
+    --ink-soft: #5B6E60;
+    --surface: #FAFBF8;
+    --panel: #FFFFFF;
+    --hairline: #E5EAE2;
+    --court: #2E6B4F;
+    --court-deep: #143D2C;
+    --ball: #E8FF54;
+    --ball-ink: #232D00;
+    --booked: #E7ECE2;
+    --display: "Inter Tight", "Inter", "Helvetica Neue", Arial, sans-serif;
+    --body: "Inter", "Helvetica Neue", Arial, sans-serif;
+    --mono: "Spline Sans Mono", "SF Mono", Menlo, monospace;
+    --shadow-sm: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05);
+    --shadow-lg: 0 12px 32px rgba(12, 31, 22, .12);
+    --control-h: 56px;
+    --btn-h: 48px;
+    --btn-h-sm: 38px;
+    --btn-radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--body); background: var(--surface); color: var(--ink); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; background: none; border: none; color: inherit; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--court); outline-offset: 3px; border-radius: 6px; }
+  img { max-width: 100%; display: block; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- Nav: solid utility ---------- */
+  .nav {
+    display: flex; align-items: center; gap: 34px;
+    padding: 16px max(24px, calc((100vw - 1120px) / 2));
+    background: var(--surface);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .wordmark {
+    font-family: var(--display); font-weight: 800; font-size: 25px; letter-spacing: -0.03em;
+    display: flex; align-items: baseline; gap: 3px; color: var(--ink); text-decoration: none;
+  }
+  .wordmark::after { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--ball); border: 1.5px solid var(--ink); }
+  .nav-links { display: flex; gap: 28px; margin-left: 10px; flex: 1; }
+  .nav-links a { color: var(--ink-soft); text-decoration: none; font-weight: 500; font-size: 14px; transition: color .15s; }
+  .nav-links a:hover, .nav-links a[aria-current] { color: var(--ink); }
+  .list-court {
+    font-size: 13.5px; font-weight: 600; color: var(--court-deep); text-decoration: none;
+    border: 1px solid var(--hairline); background: var(--panel);
+    border-radius: var(--btn-radius); transition: background .15s, border-color .15s;
+    display: inline-flex; align-items: center; height: var(--btn-h-sm); padding: 0 18px;
+  }
+  .list-court:hover { border-color: var(--court); background: #F1F7EC; }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--court);
+    color: #fff; font-weight: 600; font-size: 12.5px;
+    display: grid; place-items: center;
+  }
+
+  /* ---------- Brand header ---------- */
+  .brand-head { padding: 44px 0 0; }
+  .brand-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  .brand-id { display: flex; gap: 20px; align-items: flex-start; }
+  .logo {
+    width: 72px; height: 72px; border-radius: 16px; flex: none;
+    background: var(--court-deep); color: #fff;
+    display: grid; place-items: center;
+    font-family: var(--display); font-weight: 800; font-size: 25px; letter-spacing: -0.01em;
+  }
+  .kicker {
+    display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--court); margin-bottom: 8px;
+  }
+  .brand-name { font-family: var(--display); font-weight: 800; font-size: 38px; letter-spacing: -0.03em; line-height: 1.05; }
+  .brand-rating { margin-top: 10px; font-size: 14.5px; font-weight: 600; display: flex; align-items: center; flex-wrap: wrap; gap: 0; }
+  .ball-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ball); outline: 1.5px solid var(--ink); outline-offset: 1px; margin: 0 8px 1px 1px; }
+  .brand-rating .muted { font-weight: 400; color: var(--ink-soft); margin-left: 6px; }
+  .brand-bio { margin-top: 16px; max-width: 620px; color: var(--ink-soft); font-size: 15px; }
+  .stat-strip {
+    font-family: var(--mono); font-size: 13.5px; color: var(--ink-soft);
+    text-align: right; white-space: nowrap; padding-top: 16px;
+  }
+  .stat-strip b { color: var(--ink); font-weight: 500; }
+
+  /* ---------- Section heads ---------- */
+  section { padding: 72px 0 0; }
+  .sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 28px; }
+  .sec-head .kicker { margin-bottom: 8px; }
+  .sec-head h2 { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: -0.025em; }
+  .sec-head > div { flex: 1; }
+
+  /* ---------- Branch cards ---------- */
+  .branch-list { display: flex; flex-direction: column; gap: 24px; }
+  .branch-card {
+    background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm);
+    padding: 28px 28px 26px;
+  }
+  .branch-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .branch-title { font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: -0.015em; }
+  .branch-meta { margin-top: 7px; font-size: 13.5px; color: var(--ink-soft); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .branch-meta .rating { color: var(--ink); font-weight: 600; display: inline-flex; align-items: center; }
+  .branch-link { font-size: 14px; font-weight: 600; color: var(--court); text-decoration: none; white-space: nowrap; }
+  .branch-link:hover { color: var(--court-deep); }
+
+  .photo-strip { display: flex; gap: 10px; margin-top: 20px; overflow-x: auto; padding-bottom: 2px; }
+  .photo-strip img { height: 160px; width: 220px; flex: none; object-fit: cover; border-radius: 12px; }
+
+  .courts-table { width: 100%; border-collapse: collapse; margin-top: 22px; }
+  .courts-table tr { border-top: 1px solid var(--hairline); }
+  .courts-table tr:first-child { border-top: none; }
+  .courts-table td { padding: 13px 4px; font-size: 14px; vertical-align: middle; }
+  .court-name-cell strong { font-family: var(--display); font-weight: 600; }
+  .court-name-cell span.type { color: var(--ink-soft); }
+  .court-name-cell span.type::before { content: "· "; }
+  .court-price { font-family: var(--mono); font-weight: 500; text-align: right; white-space: nowrap; color: var(--ink); }
+  .court-book { text-align: right; width: 70px; }
+  .court-book a { color: var(--court); font-weight: 600; font-size: 13.5px; text-decoration: none; }
+  .court-book a:hover { color: var(--court-deep); }
+
+  .amenities { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .amenity-chip {
+    font-size: 12.5px; font-weight: 500; color: var(--court-deep);
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 999px; padding: 5px 12px;
+  }
+
+  /* ---------- Reviews ---------- */
+  .review-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  .review-card { background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 22px 24px; }
+  .review-top { display: flex; align-items: center; gap: 12px; }
+  .review-top .avatar { background: var(--court-deep); }
+  .review-name { font-weight: 600; font-size: 14px; }
+  .review-branch { display: block; font-size: 12.5px; color: var(--ink-soft); margin-top: 1px; }
+  .review-rating { margin-left: auto; font-weight: 600; font-size: 14px; display: flex; align-items: center; }
+  .review-card p { margin-top: 14px; color: var(--ink); font-size: 14.5px; }
+
+  footer {
+    margin-top: 72px; border-top: 1px solid var(--hairline);
+    padding: 28px max(24px, calc((100vw - 1120px) / 2)) 40px;
+    display: flex; gap: 24px; align-items: center; color: var(--ink-soft); font-size: 13px;
+  }
+  footer .wordmark { font-size: 18px; color: var(--ink); }
+  footer nav { display: flex; gap: 22px; flex: 1; }
+  footer a { color: var(--ink-soft); text-decoration: none; }
+  footer a:hover { color: var(--ink); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .branch-link, .court-book a, .list-court { transition: none; }
+  }
+
+  @media (max-width: 980px) {
+    .nav-links { display: none; }
+    .brand-top { flex-direction: column; align-items: flex-start; }
+    .stat-strip { text-align: left; padding-top: 6px; }
+    section { padding: 56px 0 0; }
+    .sec-head h2 { font-size: 26px; }
+    .review-cards { grid-template-columns: 1fr; }
+
+    .courts-table, .courts-table tbody, .courts-table tr, .courts-table td { display: block; width: 100%; }
+    .courts-table tr { padding: 10px 0; }
+    .courts-table td { padding: 2px 0; }
+    .court-price, .court-book { text-align: left; width: auto; }
+    .court-book { margin-top: 2px; }
+  }
+
+  @media (max-width: 560px) {
+    .brand-name { font-size: 30px; }
+    .brand-id { gap: 14px; }
+    .logo { width: 56px; height: 56px; border-radius: 14px; font-size: 20px; }
+    .branch-card { padding: 22px 18px 20px; }
+    footer { flex-direction: column; align-items: flex-start; gap: 14px; }
+    footer nav { flex-wrap: wrap; }
+  }
+</style>
+
+<nav class="nav">
+  <a class="wordmark" href="#">piko</a>
+  <div class="nav-links">
+    <a href="#">Find courts</a>
+    <a href="#">My bookings</a>
+  </div>
+  <a class="list-court" href="#">List your court</a>
+  <span class="avatar">CY</span>
+</nav>
+
+<header class="brand-head wrap">
+  <div class="brand-top">
+    <div class="brand-id">
+      <div class="logo" aria-hidden="true">SZ</div>
+      <div>
+        <span class="kicker">Court owner · Since 2024</span>
+        <h1 class="brand-name">Smash Zone</h1>
+        <div class="brand-rating">
+          <span class="ball-dot"></span>4.7<span class="muted">(312 reviews across 3 branches)</span>
+        </div>
+      </div>
+    </div>
+    <div class="stat-strip"><b>3 branches</b> · <b>14 courts</b> · ₱200–380/hr</div>
+  </div>
+  <p class="brand-bio">Davao region's biggest indoor-outdoor pickleball network — three branches across Tagum, Panabo, and Davao City, all built by players who got tired of booking courts over Messenger.</p>
+</header>
+
+<main class="wrap">
+  <section aria-label="Branches">
+    <div class="sec-head">
+      <div>
+        <span class="kicker">Branches</span>
+        <h2>Where Smash Zone plays</h2>
+      </div>
+    </div>
+
+    <div class="branch-list">
+
+      <!-- Branch 1: Tagum -->
+      <article class="branch-card" aria-label="Smash Zone – Tagum">
+        <div class="branch-header">
+          <div>
+            <h3 class="branch-title">Smash Zone – Tagum</h3>
+            <div class="branch-meta">
+              <span class="rating"><span class="ball-dot"></span>4.7</span>
+              <span>·</span><span>Mankilam, Tagum City</span><span>·</span><span>2.1 km away</span>
+            </div>
+          </div>
+          <a class="branch-link" href="#">View &amp; book →</a>
+        </div>
+
+        <div class="photo-strip">
+          <img src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=70&w=500&auto=format&fit=crop" alt="Outdoor court at Smash Zone Tagum">
+          <img src="https://images.unsplash.com/photo-1756477558468-b3e485757470?q=70&w=500&auto=format&fit=crop" alt="Player mid-swing at Smash Zone Tagum">
+          <img src="https://images.unsplash.com/photo-1693142518820-78d7a05f1546?q=70&w=500&auto=format&fit=crop" alt="Paddles and balls at Smash Zone Tagum">
+        </div>
+
+        <table class="courts-table">
+          <tbody>
+            <tr>
+              <td class="court-name-cell"><strong>Court 1</strong> <span class="type">Indoor</span></td>
+              <td class="court-price">₱300–350/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+            <tr>
+              <td class="court-name-cell"><strong>Court 2</strong> <span class="type">Indoor</span></td>
+              <td class="court-price">₱300–350/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+            <tr>
+              <td class="court-name-cell"><strong>Court 3</strong> <span class="type">Indoor</span></td>
+              <td class="court-price">₱280–330/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+            <tr>
+              <td class="court-name-cell"><strong>Court 4</strong> <span class="type">Outdoor</span></td>
+              <td class="court-price">₱200–250/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+            <tr>
+              <td class="court-name-cell"><strong>Court 5</strong> <span class="type">Outdoor</span></td>
+              <td class="court-price">₱200–250/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+            <tr>
+              <td class="court-name-cell"><strong>Court 6</strong> <span class="type">Outdoor</span></td>
+              <td class="court-price">₱220–260/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="amenities">
+          <span class="amenity-chip">Night lighting</span>
+          <span class="amenity-chip">Free parking</span>
+          <span class="amenity-chip">Paddle rental</span>
+          <span class="amenity-chip">Showers</span>
+        </div>
+      </article>
+
+      <!-- Branch 2: Panabo -->
+      <article class="branch-card" aria-label="Smash Zone – Panabo">
+        <div class="branch-header">
+          <div>
+            <h3 class="branch-title">Smash Zone – Panabo</h3>
+            <div class="branch-meta">
+              <span class="rating"><span class="ball-dot"></span>4.6</span>
+              <span>·</span><span>Gredu, Panabo City</span><span>·</span><span>8.4 km away</span>
+            </div>
+          </div>
+          <a class="branch-link" href="#">View &amp; book →</a>
+        </div>
+
+        <div class="photo-strip">
+          <img src="https://images.unsplash.com/photo-1710772099352-f8fbb7b30977?q=70&w=500&auto=format&fit=crop" alt="Indoor court at Smash Zone Panabo">
+          <img src="https://images.unsplash.com/photo-1686721135030-e2ab79e27b16?q=70&w=500&auto=format&fit=crop" alt="Players warming up at Smash Zone Panabo">
+          <img src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=70&w=500&auto=format&fit=crop" alt="Outdoor court at Smash Zone Panabo">
+        </div>
+
+        <table class="courts-table">
+          <tbody>
+            <tr>
+              <td class="court-name-cell"><strong>Court 1</strong> <span class="type">Indoor</span></td>
+              <td class="court-price">₱280–320/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+            <tr>
+              <td class="court-name-cell"><strong>Court 2</strong> <span class="type">Indoor</span></td>
+              <td class="court-price">₱280–320/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+            <tr>
+              <td class="court-name-cell"><strong>Court 3</strong> <span class="type">Outdoor</span></td>
+              <td class="court-price">₱200–230/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+            <tr>
+              <td class="court-name-cell"><strong>Court 4</strong> <span class="type">Outdoor</span></td>
+              <td class="court-price">₱200–230/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="amenities">
+          <span class="amenity-chip">Free parking</span>
+          <span class="amenity-chip">Paddle rental</span>
+          <span class="amenity-chip">Water station</span>
+        </div>
+      </article>
+
+      <!-- Branch 3: Davao Lanang -->
+      <article class="branch-card" aria-label="Smash Zone – Davao Lanang">
+        <div class="branch-header">
+          <div>
+            <h3 class="branch-title">Smash Zone – Davao Lanang</h3>
+            <div class="branch-meta">
+              <span class="rating"><span class="ball-dot"></span>4.8</span>
+              <span>·</span><span>Lanang, Davao City</span><span>·</span><span>34 km away</span>
+            </div>
+          </div>
+          <a class="branch-link" href="#">View &amp; book →</a>
+        </div>
+
+        <div class="photo-strip">
+          <img src="https://images.unsplash.com/photo-1756477558468-b3e485757470?q=70&w=500&auto=format&fit=crop" alt="Indoor court at Smash Zone Davao Lanang">
+          <img src="https://images.unsplash.com/photo-1710772099352-f8fbb7b30977?q=70&w=500&auto=format&fit=crop" alt="Rally in progress at Smash Zone Davao Lanang">
+          <img src="https://images.unsplash.com/photo-1686721135030-e2ab79e27b16?q=70&w=500&auto=format&fit=crop" alt="Court entrance at Smash Zone Davao Lanang">
+        </div>
+
+        <table class="courts-table">
+          <tbody>
+            <tr>
+              <td class="court-name-cell"><strong>Court 1</strong> <span class="type">Indoor</span></td>
+              <td class="court-price">₱350–380/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+            <tr>
+              <td class="court-name-cell"><strong>Court 2</strong> <span class="type">Indoor</span></td>
+              <td class="court-price">₱350–380/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+            <tr>
+              <td class="court-name-cell"><strong>Court 3</strong> <span class="type">Indoor</span></td>
+              <td class="court-price">₱320–360/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+            <tr>
+              <td class="court-name-cell"><strong>Court 4</strong> <span class="type">Outdoor</span></td>
+              <td class="court-price">₱250–280/hr</td>
+              <td class="court-book"><a href="#">Book</a></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="amenities">
+          <span class="amenity-chip">Night lighting</span>
+          <span class="amenity-chip">Free parking</span>
+          <span class="amenity-chip">Pro shop</span>
+          <span class="amenity-chip">Aircon lounge</span>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section aria-label="Latest reviews">
+    <div class="sec-head">
+      <div>
+        <span class="kicker">Player feedback</span>
+        <h2>Latest reviews</h2>
+      </div>
+    </div>
+    <div class="review-cards">
+      <article class="review-card">
+        <div class="review-top">
+          <span class="avatar" aria-hidden="true">JD</span>
+          <div>
+            <span class="review-name">Jasper D.</span>
+            <span class="review-branch">Smash Zone – Davao Lanang</span>
+          </div>
+          <span class="review-rating"><span class="ball-dot"></span>5.0</span>
+        </div>
+        <p>Solid ang courts, laging on-time ang staff. Booked the 6 AM slot and wala nang hassle sa parking pa — sulit talaga.</p>
+      </article>
+      <article class="review-card">
+        <div class="review-top">
+          <span class="avatar" aria-hidden="true">MT</span>
+          <div>
+            <span class="review-name">Michelle T.</span>
+            <span class="review-branch">Smash Zone – Tagum</span>
+          </div>
+          <span class="review-rating"><span class="ball-dot"></span>4.8</span>
+        </div>
+        <p>Great value for indoor courts — clean, well-lit, and the staff even flagged us down to lend extra balls mid-game.</p>
+      </article>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <a class="wordmark" href="#">piko</a>
+  <nav>
+    <a href="#">Find courts</a>
+    <a href="#">List your court</a>
+    <a href="#">Help</a>
+    <a href="#">Terms</a>
+  </nav>
+  <span>© 2026 Piko · Philippines</span>
+</footer>
