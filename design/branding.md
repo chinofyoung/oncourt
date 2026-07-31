@@ -1,4 +1,4 @@
-# Piko — Branding & Design Guidelines
+# OnCourt — Branding & Design Guidelines
 
 > Source of truth for all UI/design work on this project. Read this before designing
 > or building any page, component, or mockup. When the user requests branding changes,
@@ -6,8 +6,8 @@
 
 ## Brand
 
-- **Name:** `piko` (working placeholder — Filipino street game of chalk court lines). Always lowercase in the wordmark.
-- **Wordmark:** "piko" in display font weight 800, followed by a small lime square (8×8px, 2px radius, `--ball` fill). On light backgrounds add a `1.5px solid var(--ink)` border so the square keeps contrast; on dark/photo backgrounds no border. Same rule at footer size.
+- **Name:** `oncourt` — double meaning: booked on a court, and actually on the court playing. Always lowercase in the wordmark.
+- **Wordmark:** "oncourt" in display font weight 800, followed by a small lime square (8×8px, 2px radius, `--ball` fill). On light backgrounds add a `1.5px solid var(--ink)` border so the square keeps contrast; on dark/photo backgrounds no border. Same rule at footer size.
 - **Product:** pickleball court booking marketplace, Philippines-first (GCash/Maya culture, Taglish-friendly copy).
 - **Voice:** plain, energetic, player-to-player. Light Taglish accents where natural ("Laro na.", "May court ka?"). Never corporate. Buttons say exactly what they do ("Find open courts", "Book now", "List your court").
 
@@ -73,6 +73,7 @@ Headline scale: h1 68px (desktop) / 44px / 38px (mobile); section h2 30px; card 
 - **Section headers:** mono uppercase kicker in `--court` above a display h2; optional right-aligned text link "… →".
 - **Availability grid** (signature component): time rows × court columns; time spine tinted by rate band with mono times + tiny uppercase band label; open cells show their price in mono; booked cells flat `--booked`; selected cells lime with 1.5px ink border and court-corner tick marks (7×7px, 2px strokes, top-left + bottom-right).
 - **Rating:** lime dot (7px, ink outline) + bold number, count in parens muted.
+- **Maps:** Leaflet + CARTO Positron light tiles (`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png`, the `light_all` basemap). The two-tone look is produced by an inline SVG duotone filter applied to `.leaflet-tile-pane`: a `feColorMatrix` reduces the tile image to luminance, feeding a `feComponentTransfer` whose per-channel `feFuncR`/`feFuncG`/`feFuncB` lookup tables remap that luminance into two brand tones — dark tile values map to `--court-deep`, light tile values map to `--band-off`. It's applied via CSS as exactly `filter: url(#duotone) contrast(1.06)` on `.leaflet-tile-pane`. Exact tableValues, so the filter is reproducible from this doc alone: feFuncR `0.078 0.918`, feFuncG `0.239 0.949`, feFuncB `0.173 0.894`. Markers live in Leaflet's marker pane, a sibling of (outside) the tile pane, so the filter does not apply to them — markers stay untinted; price markers are pills: white bg, `--ink` text, mono 12px, `--shadow-sm`, 999px radius, active/hover inverts to `--ball` bg with a 1.5px `--ink` border. Attribution stays legible. **Warning:** container-level blend-mode overlays do NOT work with Leaflet — `.leaflet-map-pane` sits at z-index 400 on the map container, so any overlay is either fully below the map or fully above the markers and can never tint the tiles.
 - **Live indicator:** small pulsing dot + mono uppercase label (respect `prefers-reduced-motion`).
 
 ## Photography

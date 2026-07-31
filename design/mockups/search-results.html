@@ -1,7 +1,9 @@
 <!-- @dsCard group="Pages" name="Search results" -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Search results — Piko</title>
+<title>Search results — OnCourt</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
 
@@ -25,12 +27,9 @@
     --shadow-lg: 0 12px 32px rgba(12, 31, 22, .12);
     /* control sizing tokens (match home.html / branch-page.html) */
     --control-h: 56px;   /* search / filter fields */
-    --btn-h: 48px;       /* standard buttons (Book) */
+    --btn-h: 48px;       /* standard buttons */
     --btn-h-sm: 38px;    /* compact controls (slot chips, nav pill) */
     --btn-radius: 12px;  /* one corner radius for all buttons & fields */
-    /* layout offsets used for sticky positioning */
-    --nav-h: 64px;
-    --filterbar-h: 84px;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -70,120 +69,173 @@
     display: grid; place-items: center; flex: none;
   }
 
-  /* ---------- Filter bar ---------- */
-  .filterbar {
-    position: sticky; top: var(--nav-h); z-index: 50;
-    background: var(--surface);
-    border-bottom: 1px solid var(--hairline);
-    padding: 14px 0;
+  /* ---------- Map hero ---------- */
+  .map-hero { position: relative; height: 460px; overflow: hidden; }
+  .map-canvas { position: absolute; inset: 0; }
+  .venue-map { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--band-off); }
+  .leaflet-tile-pane { filter: url(#duotone) contrast(1.06); }
+  .venue-map .leaflet-control-attribution { font-size: 10.5px; position: relative; z-index: 700; }
+
+  .price-pin-icon { background: transparent !important; border: none !important; }
+  .price-pin {
+    display: inline-flex; align-items: center; white-space: nowrap;
+    background: var(--panel); color: var(--ink);
+    font-family: var(--mono); font-size: 12px;
+    padding: 6px 12px; border-radius: 999px; box-shadow: var(--shadow-sm);
+    border: 1.5px solid transparent;
+    transition: background .15s, border-color .15s, color .15s;
   }
-  .fb-inner { display: flex; align-items: center; gap: 4px; }
-  .fb-field {
+  .price-pin.active { background: var(--ball); color: var(--ball-ink); border-color: var(--ink); }
+  .price-pin.is-full {
+    background: var(--booked); color: var(--ink-soft);
+    text-transform: uppercase; letter-spacing: .04em; font-weight: 600;
+  }
+  .price-pin.is-full.active { background: var(--ink-soft); color: #fff; border-color: var(--ink-soft); }
+
+  .you-are-here-icon { background: transparent !important; border: none !important; }
+  .you-are-here-dot {
+    display: block; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--court);
+    box-shadow: 0 0 0 2px var(--panel), var(--shadow-sm);
+  }
+
+  .search-float {
+    position: absolute; left: max(24px, calc((100vw - 1120px) / 2)); bottom: 24px; z-index: 950;
+    display: flex; align-items: stretch; gap: 4px;
+    background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-lg); padding: 16px;
+  }
+  .sf-field {
     height: var(--control-h); display: flex; flex-direction: column; justify-content: center;
-    padding: 0 16px; border-radius: var(--btn-radius); flex: none;
+    padding: 0 16px; flex: none;
   }
-  .fb-field + .fb-field { border-left: 1px solid var(--hairline); }
-  .fb-field .fb-label {
+  .sf-field + .sf-field { border-left: 1px solid var(--hairline); }
+  .sf-label {
     font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
     color: var(--ink-soft); margin-bottom: 3px;
   }
-  .fb-field .fb-val { font-weight: 600; font-size: 14.5px; color: var(--ink); white-space: nowrap; }
-  .fb-divider { width: 1px; align-self: stretch; background: var(--hairline); margin: 0 12px; flex: none; }
-  .fchip {
-    height: var(--btn-h-sm); display: inline-flex; align-items: center; flex: none;
+  .sf-val { font-weight: 600; font-size: 14.5px; color: var(--ink); white-space: nowrap; }
+  .sf-update {
+    height: var(--control-h); padding: 0 22px; margin-left: 8px; border-radius: var(--btn-radius);
+    background: var(--ball); color: var(--ball-ink); font-family: var(--display); font-weight: 700; font-size: 14.5px;
+    display: inline-flex; align-items: center; white-space: nowrap;
+    transition: filter .15s, transform .15s;
+  }
+  .sf-update:hover { filter: brightness(1.06); }
+  .sf-update:active { transform: scale(.98); }
+
+  .hero-note {
+    position: absolute; left: max(24px, calc((100vw - 1120px) / 2)); top: 16px; z-index: 900;
+    font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft);
+    background: var(--panel); padding: 8px 14px; border-radius: 999px; box-shadow: var(--shadow-sm);
+  }
+
+  /* ---------- Results section head (home.html pattern) ---------- */
+  main.wrap { padding-top: 32px; padding-bottom: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 20px; }
+  .sec-head .kicker {
+    display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--court); margin-bottom: 8px;
+  }
+  .sec-head h2 { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: -0.025em; }
+  .sec-head > div { flex: 1; }
+  .sort-btn {
+    height: var(--btn-h-sm); padding: 0 16px; border-radius: var(--btn-radius);
+    border: 1px solid var(--hairline); background: var(--panel);
+    font-size: 13.5px; font-weight: 600; color: var(--ink-soft); white-space: nowrap;
+    transition: border-color .15s, color .15s;
+  }
+  .sort-btn:hover { border-color: var(--court); color: var(--ink); }
+
+  /* ---------- Filter chips ---------- */
+  .chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px; }
+  .filter-chip {
+    height: var(--btn-h-sm); display: inline-flex; align-items: center;
     padding: 0 16px; border-radius: 999px; border: 1px solid var(--hairline);
     background: var(--panel); font-size: 13.5px; font-weight: 600; color: var(--ink-soft);
-    margin-right: 8px; transition: background .15s, border-color .15s, color .15s;
+    transition: background .15s, border-color .15s, color .15s;
   }
-  .fchip:hover { border-color: var(--court); color: var(--ink); }
-  .fchip.active { background: var(--ball); border-color: var(--ink); color: var(--ball-ink); }
-  .fb-right { margin-left: auto; display: flex; align-items: center; gap: 14px; flex: none; }
-  .fb-count { font-size: 13.5px; font-weight: 600; color: var(--ink); white-space: nowrap; }
-  .map-toggle {
-    display: none; align-items: center; gap: 7px; flex: none;
-    height: var(--btn-h-sm); padding: 0 16px; border-radius: 999px;
-    border: 1px solid var(--hairline); background: var(--panel);
-    font-size: 13.5px; font-weight: 600; color: var(--ink);
-  }
-  .pin-glyph { font-size: 13px; line-height: 1; }
+  .filter-chip:hover { border-color: var(--court); color: var(--ink); }
+  .filter-chip.active { background: var(--ink); color: #fff; border-color: var(--ink); }
 
-  /* ---------- Results layout ---------- */
-  .results-layout {
-    display: grid; grid-template-columns: 1.38fr 1fr; gap: 24px;
-    align-items: start; margin-top: 28px; padding-bottom: 72px;
-  }
-  .results-list { display: flex; flex-direction: column; gap: 20px; }
+  /* ---------- Card grid ---------- */
+  .card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
 
-  /* result card */
-  .rcard {
-    display: flex; background: var(--panel); border-radius: 20px; overflow: hidden;
+  .court-card {
+    position: relative; background: var(--panel); border-radius: 20px; overflow: hidden;
     box-shadow: var(--shadow-sm);
-    transition: transform .22s cubic-bezier(.2,.7,.3,1), box-shadow .22s;
+    transition: transform .22s cubic-bezier(.2,.7,.3,1), box-shadow .22s, outline-color .15s;
   }
-  .rcard:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
-  .rcard .photo { width: 200px; flex: none; position: relative; overflow: hidden; }
-  .rcard .photo img { width: 100%; height: 100%; object-fit: cover; }
-  .rcard .body { padding: 18px 22px 20px; display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; }
-  .rcard .name { font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: -0.015em; }
-  .rating-row { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-  .rating-row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ball); outline: 1.5px solid var(--ink); outline-offset: 1px; flex: none; }
-  .rating-row .num { font-weight: 600; color: var(--ink); }
-  .rating-row .count { color: var(--ink-soft); }
-  .address { font-size: 13px; color: var(--ink-soft); }
-  .mix-tag {
-    align-self: flex-start; font-size: 12px; font-weight: 600; color: var(--court-deep);
-    background: var(--band-off); border-radius: 999px; padding: 4px 11px;
-  }
-  .price { font-family: var(--mono); font-weight: 500; font-size: 15px; margin-top: 1px; }
-  .price small { font-family: var(--body); color: var(--ink-soft); font-size: 12px; }
+  .court-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .court-card .photo { position: relative; aspect-ratio: 16 / 10; overflow: hidden; }
+  .court-card .photo img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s cubic-bezier(.2,.7,.3,1); }
+  .court-card:hover .photo img { transform: scale(1.045); }
 
-  .footer-row { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 10px; flex-wrap: wrap; }
+  .dist-chip {
+    position: absolute; left: 12px; top: 12px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em;
+    background: rgba(6, 20, 13, .62); color: #fff;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 999px; padding: 5px 12px;
+  }
+  .next-open {
+    position: absolute; left: 12px; bottom: 12px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em;
+    background: rgba(6, 20, 13, .62); color: var(--ball);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(232,255,84,.25);
+    border-radius: 999px; padding: 5px 12px;
+  }
+
+  .court-card .body { padding: 18px 20px 20px; }
+  .court-card h3 { font-family: var(--display); font-weight: 700; font-size: 17.5px; letter-spacing: -0.015em; }
+  .card-rating { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-top: 6px; }
+  .card-rating .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ball); outline: 1.5px solid var(--ink); outline-offset: 1px; flex: none; }
+  .card-rating .num { font-weight: 600; color: var(--ink); }
+  .card-rating .count { color: var(--ink-soft); }
+  .card-address { font-size: 13px; color: var(--ink-soft); margin-top: 4px; }
+  .card-mix { font-family: var(--mono); font-size: 12px; color: var(--court); margin-top: 4px; }
+
+  .slot-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
   .slot-chip {
-    height: var(--btn-h-sm); padding: 0 14px; border-radius: 999px;
+    height: 32px; padding: 0 14px; border-radius: var(--btn-radius);
     font-family: var(--mono); font-size: 13px; border: 1px solid var(--hairline);
     background: var(--surface); color: var(--ink);
     display: inline-flex; align-items: center;
-    transition: background .15s, border-color .15s, transform .15s;
+    transition: background .15s, border-color .15s;
   }
   .slot-chip:hover { border-color: var(--court); background: #F1F7EC; }
-  .slot-chip.selected { background: var(--ball); border: 1px solid var(--ink); color: var(--ball-ink); font-weight: 600; }
-  .book-btn {
-    margin-left: auto; height: var(--btn-h); padding: 0 26px; border-radius: var(--btn-radius);
-    background: var(--ball); color: var(--ball-ink); font-family: var(--display); font-weight: 700; font-size: 15px;
+  .slot-chip.selected { background: var(--ball); border: 1.5px solid var(--ink); color: var(--ball-ink); font-weight: 600; }
+
+  .card-foot { display: flex; align-items: center; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+  .card-foot .price { font-family: var(--mono); font-weight: 500; font-size: 15px; flex: 1; }
+  .card-foot .price small { font-family: var(--body); color: var(--ink-soft); font-size: 12.5px; }
+  .card-book {
+    height: var(--btn-h-sm); padding: 0 20px; border-radius: var(--btn-radius);
+    background: var(--ball); color: var(--ball-ink); font-family: var(--display); font-weight: 700; font-size: 14px;
     display: inline-flex; align-items: center; transition: filter .15s, transform .15s;
   }
-  .book-btn:hover { filter: brightness(1.06); }
-  .book-btn:active { transform: scale(.98); }
+  .card-book:hover { filter: brightness(1.06); }
+  .card-book:active { transform: scale(.98); }
 
   /* fully-booked variant */
-  .rcard.is-booked .photo::after {
+  .court-card.is-booked .photo::after {
     content: ""; position: absolute; inset: 0; background: rgba(250, 251, 248, .55);
   }
-  .rcard.is-booked .name,
-  .rcard.is-booked .rating-row .num,
-  .rcard.is-booked .rating-row .count,
-  .rcard.is-booked .address,
-  .rcard.is-booked .price { color: var(--ink-soft); }
-  .rcard.is-booked .rating-row .dot { background: var(--hairline); outline-color: var(--ink-soft); }
-  .rcard.is-booked .mix-tag { background: var(--booked); color: var(--ink-soft); }
-  .rcard.is-booked .slot-chip {
+  .court-card.is-booked h3,
+  .court-card.is-booked .card-rating .num,
+  .court-card.is-booked .card-rating .count,
+  .court-card.is-booked .card-address,
+  .court-card.is-booked .card-foot .price { color: var(--ink-soft); }
+  .court-card.is-booked .card-rating .dot { background: var(--hairline); outline-color: var(--ink-soft); }
+  .court-card.is-booked .slot-chip {
     background: var(--booked); border-color: transparent; color: #9DAA9B;
     cursor: default; pointer-events: none;
   }
-  .next-open-text { margin-left: auto; font-size: 14px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
 
-  /* ---------- Map panel ---------- */
-  .map-panel {
-    position: sticky; top: calc(var(--nav-h) + var(--filterbar-h) + 16px);
-    height: 560px; border-radius: 20px; background: #EDF2E9;
-    overflow: hidden;
-  }
-  .pin-badge {
-    position: absolute; background: var(--panel); color: var(--ink);
-    font-family: var(--mono); font-weight: 600; font-size: 13px;
-    padding: 6px 13px; border-radius: 999px; box-shadow: var(--shadow-sm);
-  }
-  .pin-badge.active { background: var(--ball); color: var(--ball-ink); }
+  /* map <-> card interaction states */
+  .card-highlighted { outline: 2px solid var(--court); outline-offset: 2px; }
+  .flash-ring { outline: 2px solid var(--ball); outline-offset: 3px; }
 
   footer {
     border-top: 1px solid var(--hairline);
@@ -196,23 +248,35 @@
   footer a:hover { color: var(--ink); }
 
   @media (prefers-reduced-motion: reduce) {
-    .rcard, .book-btn, .slot-chip { transition: none; }
+    .court-card, .card-book, .slot-chip, .sf-update, .filter-chip, .sort-btn, .price-pin, .court-card .photo img { transition: none; }
   }
 
   @media (max-width: 980px) {
     .nav-links { display: none; }
-    .map-panel { display: none; }
-    .map-toggle { display: inline-flex; }
-    .results-layout { grid-template-columns: 1fr; }
-    .fb-inner { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: thin; }
-    .fb-inner::-webkit-scrollbar { height: 5px; }
-    .rcard { flex-direction: column; }
-    .rcard .photo { width: 100%; height: 180px; }
+
+    .map-hero { height: auto; overflow: visible; display: flex; flex-direction: column; }
+    .map-canvas { position: relative; height: 320px; }
+    .search-float {
+      position: static; margin: 16px max(24px, calc((100vw - 1120px) / 2)) 0;
+      box-shadow: var(--shadow-sm); flex-wrap: wrap; row-gap: 10px;
+    }
+    .sf-field { flex: 1 1 auto; }
+    .sf-update { flex: 1 1 100%; justify-content: center; margin-left: 0; }
+    .hero-note { position: static; margin: 12px max(24px, calc((100vw - 1120px) / 2)) 0; width: fit-content; }
+  }
+
+  @media (max-width: 1100px) {
+    .card-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (max-width: 700px) {
+    .card-grid { grid-template-columns: 1fr; }
   }
 
   @media (max-width: 560px) {
     footer { flex-direction: column; align-items: flex-start; gap: 14px; }
     footer nav { flex-wrap: wrap; }
+    .sf-field { border-left: none !important; }
   }
 
   /* ---------- Mockup page switcher (dev-only aid, not part of product UI) ---------- */
@@ -246,7 +310,7 @@
 </style>
 
 <nav class="nav">
-  <a class="wordmark" href="#">piko</a>
+  <a class="wordmark" href="#">oncourt</a>
   <div class="nav-links">
     <a href="#" aria-current="page">Find courts</a>
     <a href="#">My bookings</a>
@@ -255,156 +319,283 @@
   <span class="avatar">CY</span>
 </nav>
 
-<div class="filterbar">
-  <div class="wrap fb-inner">
-    <div class="fb-field">
-      <span class="fb-label">Where</span>
-      <span class="fb-val">Near me · Tagum City</span>
-    </div>
-    <div class="fb-field">
-      <span class="fb-label">Date</span>
-      <span class="fb-val">Fri, Aug 1</span>
-    </div>
-    <div class="fb-field">
-      <span class="fb-label">Time</span>
-      <span class="fb-val">6 – 8 PM</span>
-    </div>
-    <div class="fb-divider"></div>
-    <button class="fchip" type="button">Indoor</button>
-    <button class="fchip" type="button">Outdoor</button>
-    <button class="fchip active" type="button">≤ ₱300/hr</button>
-    <div class="fb-right">
-      <span class="fb-count">8 courts open</span>
-      <button class="map-toggle" type="button"><span class="pin-glyph">📍</span>Map</button>
-    </div>
+<section class="map-hero" aria-label="Map of courts near you">
+  <div class="map-canvas">
+    <div id="venue-map" class="venue-map"></div>
   </div>
-</div>
 
-<main class="wrap results-layout">
-  <div class="results-list">
-    <!-- 1. Palo Verde Pickle Club -->
-    <article class="rcard">
+  <div class="hero-note">6 courts open · Fri, Aug 1 · 6 – 8 PM</div>
+
+  <div class="search-float">
+    <div class="sf-field">
+      <span class="sf-label">Where</span>
+      <span class="sf-val">Near me · Tacloban City</span>
+    </div>
+    <div class="sf-field">
+      <span class="sf-label">Date</span>
+      <span class="sf-val">Fri, Aug 1</span>
+    </div>
+    <div class="sf-field">
+      <span class="sf-label">Time</span>
+      <span class="sf-val">6 – 8 PM</span>
+    </div>
+    <button class="sf-update" type="button">Update search</button>
+  </div>
+</section>
+
+<main class="wrap">
+  <div class="sec-head">
+    <div>
+      <span class="kicker">Results</span>
+      <h2>6 courts near you</h2>
+    </div>
+    <button class="sort-btn" type="button">Sort: Distance ▾</button>
+  </div>
+
+  <div class="chip-row">
+    <button class="filter-chip" type="button">Indoor</button>
+    <button class="filter-chip" type="button">Outdoor</button>
+    <button class="filter-chip active" type="button">≤ ₱300/hr</button>
+    <button class="filter-chip" type="button">Open now</button>
+  </div>
+
+  <div class="card-grid">
+    <!-- 1. Rally Republic -->
+    <article class="court-card" data-venue="2">
       <div class="photo">
-        <img src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=70&w=500&auto=format&fit=crop" alt="Palo Verde Pickle Club courts">
+        <img src="https://images.unsplash.com/photo-1756477558468-b3e485757470?q=70&w=600&auto=format&fit=crop" alt="Rally Republic courts">
+        <span class="dist-chip">0.3 km</span>
+        <span class="next-open">Next open · 7 PM</span>
       </div>
       <div class="body">
-        <h3 class="name">Palo Verde Pickle Club</h3>
-        <div class="rating-row"><span class="dot"></span><span class="num">4.8</span><span class="count">(142)</span></div>
-        <div class="address">Apokon · 1.9km</div>
-        <span class="mix-tag">Indoor &amp; Outdoor</span>
-        <span class="price">from ₱200<small>/hr</small></span>
-        <div class="footer-row">
-          <button class="slot-chip" type="button">6 PM</button>
+        <h3>Rally Republic</h3>
+        <div class="card-rating"><span class="dot"></span><span class="num">4.6</span><span class="count">(98)</span></div>
+        <div class="card-address">Downtown, Tacloban City</div>
+        <div class="card-mix">3 indoor</div>
+        <div class="slot-row">
           <button class="slot-chip" type="button">7 PM</button>
           <button class="slot-chip" type="button">8 PM</button>
-          <button class="book-btn" type="button">Book</button>
+        </div>
+        <div class="card-foot">
+          <span class="price">from ₱250<small>/hr</small></span>
+          <button class="card-book" type="button">Book</button>
         </div>
       </div>
     </article>
 
-    <!-- 2. Rally Republic -->
-    <article class="rcard">
+    <!-- 2. Bayside Pickle Hub -->
+    <article class="court-card" data-venue="5">
       <div class="photo">
-        <img src="https://images.unsplash.com/photo-1756477558468-b3e485757470?q=70&w=500&auto=format&fit=crop" alt="Rally Republic courts">
+        <img src="https://images.unsplash.com/photo-1686721135030-e2ab79e27b16?q=70&w=600&auto=format&fit=crop" alt="Bayside Pickle Hub courts">
+        <span class="dist-chip">1.8 km</span>
+        <span class="next-open">Next open · 8 PM</span>
       </div>
       <div class="body">
-        <h3 class="name">Rally Republic</h3>
-        <div class="rating-row"><span class="dot"></span><span class="num">4.6</span><span class="count">(98)</span></div>
-        <div class="address">Magugpo East · 3.2km</div>
-        <span class="mix-tag">Indoor only</span>
-        <span class="price">from ₱250<small>/hr</small></span>
-        <div class="footer-row">
-          <button class="slot-chip" type="button">6 PM</button>
-          <button class="slot-chip" type="button">7 PM</button>
+        <h3>Bayside Pickle Hub</h3>
+        <div class="card-rating"><span class="dot"></span><span class="num">4.5</span><span class="count">(41)</span></div>
+        <div class="card-address">Anibong, Tacloban City</div>
+        <div class="card-mix">2 indoor</div>
+        <div class="slot-row">
           <button class="slot-chip" type="button">8 PM</button>
-          <button class="book-btn" type="button">Book</button>
+        </div>
+        <div class="card-foot">
+          <span class="price">from ₱220<small>/hr</small></span>
+          <button class="card-book" type="button">Book</button>
         </div>
       </div>
     </article>
 
-    <!-- 3. Dinky's Yard -->
-    <article class="rcard">
+    <!-- 3. Palo Verde Pickle Club -->
+    <article class="court-card" data-venue="1">
       <div class="photo">
-        <img src="https://images.unsplash.com/photo-1693142518820-78d7a05f1546?q=70&w=500&auto=format&fit=crop" alt="Dinky's Yard courts">
+        <img src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=70&w=600&auto=format&fit=crop" alt="Palo Verde Pickle Club courts">
+        <span class="dist-chip">2.1 km</span>
+        <span class="next-open">Next open · 6 PM</span>
       </div>
       <div class="body">
-        <h3 class="name">Dinky's Yard</h3>
-        <div class="rating-row"><span class="dot"></span><span class="num">4.9</span><span class="count">(64)</span></div>
-        <div class="address">Visayan Village · 4.5km</div>
-        <span class="mix-tag">Outdoor only</span>
-        <span class="price">from ₱180<small>/hr</small></span>
-        <div class="footer-row">
+        <h3>Palo Verde Pickle Club</h3>
+        <div class="card-rating"><span class="dot"></span><span class="num">4.8</span><span class="count">(132)</span></div>
+        <div class="card-address">Marasbaras, Tacloban City</div>
+        <div class="card-mix">4 indoor · 2 outdoor</div>
+        <div class="slot-row">
           <button class="slot-chip" type="button">6 PM</button>
           <button class="slot-chip" type="button">7 PM</button>
           <button class="slot-chip" type="button">8 PM</button>
-          <button class="book-btn" type="button">Book</button>
+        </div>
+        <div class="card-foot">
+          <span class="price">from ₱200<small>/hr</small></span>
+          <button class="card-book" type="button">Book</button>
         </div>
       </div>
     </article>
 
-    <!-- 4. Smash Zone – Tagum — FULLY BOOKED -->
-    <article class="rcard is-booked">
+    <!-- 4. Dinky's Yard -->
+    <article class="court-card" data-venue="3">
       <div class="photo">
-        <img src="https://images.unsplash.com/photo-1710772099352-f8fbb7b30977?q=70&w=500&auto=format&fit=crop" alt="Smash Zone Tagum courts">
+        <img src="https://images.unsplash.com/photo-1693142518820-78d7a05f1546?q=70&w=600&auto=format&fit=crop" alt="Dinky's Yard courts">
+        <span class="dist-chip">2.1 km</span>
+        <span class="next-open">Next open · 6 PM</span>
       </div>
       <div class="body">
-        <h3 class="name">Smash Zone – Tagum</h3>
-        <div class="rating-row"><span class="dot"></span><span class="num">4.7</span><span class="count">(210)</span></div>
-        <div class="address">Mankilam · 5.1km</div>
-        <span class="mix-tag">Indoor &amp; Outdoor</span>
-        <span class="price">from ₱300<small>/hr</small></span>
-        <div class="footer-row">
+        <h3>Dinky's Yard</h3>
+        <div class="card-rating"><span class="dot"></span><span class="num">4.9</span><span class="count">(64)</span></div>
+        <div class="card-address">V&G Subdivision, Tacloban City</div>
+        <div class="card-mix">2 outdoor</div>
+        <div class="slot-row">
+          <button class="slot-chip" type="button">6 PM</button>
+          <button class="slot-chip" type="button">8 PM</button>
+        </div>
+        <div class="card-foot">
+          <span class="price">from ₱180<small>/hr</small></span>
+          <button class="card-book" type="button">Book</button>
+        </div>
+      </div>
+    </article>
+
+    <!-- 5. Smash Zone – Tacloban -->
+    <article class="court-card" data-venue="4">
+      <div class="photo">
+        <img src="https://images.unsplash.com/photo-1710772099352-f8fbb7b30977?q=70&w=600&auto=format&fit=crop" alt="Smash Zone Tacloban courts">
+        <span class="dist-chip">2.2 km</span>
+        <span class="next-open">Next open · 6 PM</span>
+      </div>
+      <div class="body">
+        <h3>Smash Zone – Tacloban</h3>
+        <div class="card-rating"><span class="dot"></span><span class="num">4.7</span><span class="count">(89)</span></div>
+        <div class="card-address">Abucay, Tacloban City</div>
+        <div class="card-mix">4 indoor · 2 outdoor</div>
+        <div class="slot-row">
+          <button class="slot-chip" type="button">6 PM</button>
+          <button class="slot-chip" type="button">7 PM</button>
+        </div>
+        <div class="card-foot">
+          <span class="price">from ₱300<small>/hr</small></span>
+          <button class="card-book" type="button">Book</button>
+        </div>
+      </div>
+    </article>
+
+    <!-- 6. Northline Courts — FULLY BOOKED -->
+    <article class="court-card is-booked" data-venue="6">
+      <div class="photo">
+        <img src="https://images.unsplash.com/photo-1580763850690-44fd66eb2863?q=70&w=600&auto=format&fit=crop" alt="Northline Courts courts">
+        <span class="dist-chip">4.7 km</span>
+        <span class="next-open">Next open · 9 PM</span>
+      </div>
+      <div class="body">
+        <h3>Northline Courts</h3>
+        <div class="card-rating"><span class="dot"></span><span class="num">4.4</span><span class="count">(27)</span></div>
+        <div class="card-address">Diit, Tacloban City</div>
+        <div class="card-mix">3 outdoor</div>
+        <div class="slot-row">
           <button class="slot-chip" type="button" disabled>6 PM</button>
           <button class="slot-chip" type="button" disabled>7 PM</button>
           <button class="slot-chip" type="button" disabled>8 PM</button>
-          <span class="next-open-text">Next open · 9 PM</span>
         </div>
-      </div>
-    </article>
-
-    <!-- 5. Bayside Pickle Hub -->
-    <article class="rcard">
-      <div class="photo">
-        <img src="https://images.unsplash.com/photo-1686721135030-e2ab79e27b16?q=70&w=500&auto=format&fit=crop" alt="Bayside Pickle Hub courts">
-      </div>
-      <div class="body">
-        <h3 class="name">Bayside Pickle Hub</h3>
-        <div class="rating-row"><span class="dot"></span><span class="num">4.5</span><span class="count">(87)</span></div>
-        <div class="address">Liboganon · 7.8km</div>
-        <span class="mix-tag">Indoor &amp; Outdoor</span>
-        <span class="price">from ₱220<small>/hr</small></span>
-        <div class="footer-row">
-          <button class="slot-chip" type="button">6 PM</button>
-          <button class="slot-chip" type="button">7 PM</button>
-          <button class="slot-chip" type="button">8 PM</button>
-          <button class="book-btn" type="button">Book</button>
+        <div class="card-foot">
+          <span class="price">Fully booked today</span>
         </div>
       </div>
     </article>
   </div>
-
-  <aside class="map-panel" role="img" aria-label="Map showing venue locations near Tagum City">
-    <span class="pin-badge active" style="left: 28%; top: 22%;">₱200</span>
-    <span class="pin-badge" style="left: 58%; top: 40%;">₱250</span>
-    <span class="pin-badge" style="left: 20%; top: 62%;">₱180</span>
-    <span class="pin-badge" style="left: 68%; top: 74%;">₱300</span>
-  </aside>
 </main>
 
 <footer>
-  <a class="wordmark" href="#">piko</a>
+  <a class="wordmark" href="#">oncourt</a>
   <nav>
     <a href="#">Find courts</a>
     <a href="#">List your court</a>
     <a href="#">Help</a>
     <a href="#">Terms</a>
   </nav>
-  <span>© 2026 Piko · Philippines</span>
+  <span>© 2026 OnCourt · Philippines</span>
 </footer>
 
 <script>
-  // Slot chip selection: clicking a chip toggles `.selected`, deselecting siblings in that card.
-  document.querySelectorAll('.rcard:not(.is-booked) .footer-row').forEach(row => {
+  // ---------- Map + price-pin markers ----------
+  const venuePins = {
+    2: { coords: [11.2415, 125.0060], price: "₱250" },
+    5: { coords: [11.2527, 124.9907], price: "₱220" },
+    1: { coords: [11.2280, 124.9950], price: "₱200" },
+    3: { coords: [11.2340, 124.9885], price: "₱180" },
+    4: { coords: [11.2378, 124.9861], price: "₱300" },
+    6: { coords: [11.2626, 124.9664], price: "FULL", full: true }
+  };
+
+  // The user's location — used ONLY as the anchor/reference point for the
+  // distance chips shown on each card. This is intentionally a separate
+  // concept from map framing (which is now determined by fitBounds — see
+  // below), so do NOT change this value just because the map's visual
+  // center changes.
+  const USER_LOCATION = [11.2444, 125.0048];
+
+  const map = L.map('venue-map', { zoomControl: false, scrollWheelZoom: false }).setView(USER_LOCATION, 13);
+  L.control.zoom({ position: 'topright' }).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd',
+    maxZoom: 20,
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+  }).addTo(map);
+
+  L.marker(USER_LOCATION, {
+    icon: L.divIcon({ className: 'you-are-here-icon', html: '<span class="you-are-here-dot"></span>', iconSize: null }),
+    interactive: false
+  }).addTo(map);
+
+  const markers = {};
+
+  Object.keys(venuePins).forEach(id => {
+    const v = venuePins[id];
+    const icon = L.divIcon({
+      className: 'price-pin-icon',
+      html: `<span class="price-pin${v.full ? ' is-full' : ''}">${v.price}</span>`,
+      iconSize: null
+    });
+    const marker = L.marker(v.coords, { icon }).addTo(map);
+    markers[id] = marker;
+
+    marker.on('mouseover', () => {
+      const card = document.querySelector(`.court-card[data-venue="${id}"]`);
+      if (card) card.classList.add('card-highlighted');
+      const el = marker.getElement();
+      if (el) el.querySelector('.price-pin').classList.add('active');
+    });
+    marker.on('mouseout', () => {
+      const card = document.querySelector(`.court-card[data-venue="${id}"]`);
+      if (card) card.classList.remove('card-highlighted');
+      const el = marker.getElement();
+      if (el) el.querySelector('.price-pin').classList.remove('active');
+    });
+    marker.on('click', () => {
+      const card = document.querySelector(`.court-card[data-venue="${id}"]`);
+      if (!card) return;
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      card.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+      card.classList.add('flash-ring');
+      setTimeout(() => card.classList.remove('flash-ring'), 1200);
+    });
+  });
+
+  const markerGroup = L.featureGroup(Object.values(markers));
+  map.fitBounds(markerGroup.getBounds(), { padding: [56, 56] });
+
+  // ---------- Card -> marker hover pairing ----------
+  document.querySelectorAll('.court-card').forEach(card => {
+    const id = card.getAttribute('data-venue');
+    const marker = markers[id];
+    if (!marker) return;
+    card.addEventListener('mouseenter', () => {
+      const el = marker.getElement();
+      if (el) el.querySelector('.price-pin').classList.add('active');
+    });
+    card.addEventListener('mouseleave', () => {
+      const el = marker.getElement();
+      if (el) el.querySelector('.price-pin').classList.remove('active');
+    });
+  });
+
+  // ---------- Slot chip selection (per card, not booked) ----------
+  document.querySelectorAll('.court-card:not(.is-booked) .slot-row').forEach(row => {
     row.addEventListener('click', e => {
       const chip = e.target.closest('.slot-chip');
       if (!chip) return;
@@ -423,7 +614,19 @@
     <a class="ms-row" href="branch-page.html">Branch page</a>
     <a class="ms-row" href="owner-profile.html">Owner profile</a>
     <a class="ms-row" href="owner-dashboard.html">Owner dashboard</a>
+    <a class="ms-row" href="player-dashboard.html">Player dashboard</a>
     <a class="ms-row" href="checkout.html">Checkout</a>
     <a class="ms-row" href="admin-approvals.html">Admin approvals</a>
   </div>
 </details>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <filter id="duotone" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0"/>
+    <feComponentTransfer>
+      <feFuncR type="table" tableValues="0.078 0.918"/>
+      <feFuncG type="table" tableValues="0.239 0.949"/>
+      <feFuncB type="table" tableValues="0.173 0.894"/>
+    </feComponentTransfer>
+  </filter>
+</svg>

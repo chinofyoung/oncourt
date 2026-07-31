@@ -1,0 +1,558 @@
+<!-- @dsCard group="Pages" name="Player dashboard (my bookings)" -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My bookings — OnCourt</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --ink: #0C1F16;
+    --ink-soft: #5B6E60;
+    --surface: #FAFBF8;
+    --panel: #FFFFFF;
+    --hairline: #E5EAE2;
+    --court: #2E6B4F;
+    --court-deep: #143D2C;
+    --ball: #E8FF54;
+    --ball-ink: #232D00;
+    --booked: #E7ECE2;
+    --band-off: #EAF2E4;
+    --band-peak: #CDE3C2;
+    --display: "Inter Tight", "Inter", "Helvetica Neue", Arial, sans-serif;
+    --body: "Inter", "Helvetica Neue", Arial, sans-serif;
+    --mono: "Spline Sans Mono", "SF Mono", Menlo, monospace;
+    --shadow-sm: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05);
+    --shadow-lg: 0 12px 32px rgba(12, 31, 22, .12);
+    --control-h: 56px;
+    --btn-h: 48px;
+    --btn-h-sm: 38px;
+    --btn-radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { font-family: var(--body); background: var(--surface); color: var(--ink); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; background: none; border: none; color: inherit; }
+  a { color: inherit; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--court); outline-offset: 3px; border-radius: 6px; }
+  img { max-width: 100%; display: block; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- Nav: solid utility ---------- */
+  .nav {
+    display: flex; align-items: center; gap: 34px;
+    padding: 16px max(24px, calc((100vw - 1120px) / 2));
+    background: var(--surface);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .wordmark {
+    font-family: var(--display); font-weight: 800; font-size: 25px; letter-spacing: -0.03em;
+    display: flex; align-items: baseline; gap: 3px; color: var(--ink); text-decoration: none;
+  }
+  .wordmark::after { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--ball); border: 1.5px solid var(--ink); }
+  .nav-links { display: flex; gap: 28px; margin-left: 10px; flex: 1; }
+  .nav-links a { color: var(--ink-soft); text-decoration: none; font-weight: 500; font-size: 14px; transition: color .15s; }
+  .nav-links a:hover, .nav-links a[aria-current] { color: var(--ink); font-weight: 600; }
+  .list-court {
+    font-size: 13.5px; font-weight: 600; color: var(--court-deep); text-decoration: none;
+    border: 1px solid var(--hairline); background: var(--panel);
+    border-radius: var(--btn-radius); transition: background .15s, border-color .15s;
+    display: inline-flex; align-items: center; height: var(--btn-h-sm); padding: 0 18px;
+  }
+  .list-court:hover { border-color: var(--court); background: #F1F7EC; }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--court); color: #fff; font-weight: 600; font-size: 12.5px;
+    display: grid; place-items: center; flex: none;
+  }
+
+  /* ---------- Page header ---------- */
+  .page-head { padding: 32px 0 28px; }
+  .kicker {
+    display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--court); margin-bottom: 10px;
+  }
+  .page-head h1 { font-family: var(--display); font-weight: 800; font-size: 34px; letter-spacing: -0.03em; line-height: 1.1; }
+  .page-head p { margin-top: 8px; color: var(--ink-soft); font-size: 15px; max-width: 520px; }
+
+  /* ---------- Stat tiles ---------- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+  .stat-card { background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 20px; }
+  .stat-card .s-kicker {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft);
+  }
+  .stat-card .value { font-family: var(--mono); font-weight: 600; font-size: 27px; color: var(--ink); margin-top: 10px; }
+
+  /* ---------- Tabs ---------- */
+  .tabs {
+    display: flex; gap: 28px; border-bottom: 1px solid var(--hairline);
+    overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 24px;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    font-family: var(--display); font-weight: 600; font-size: 14.5px; color: var(--ink-soft);
+    padding: 0 2px 12px; white-space: nowrap; border-bottom: 2px solid transparent;
+    transition: color .15s, border-color .15s;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.active { color: var(--ink); border-bottom-color: var(--ball); }
+
+  /* ---------- Layout: panels + right rail ---------- */
+  .layout { display: grid; grid-template-columns: 1fr 300px; gap: 28px; align-items: start; padding-bottom: 72px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ---------- Booking cards (Upcoming) ---------- */
+  .booking-card {
+    display: flex; gap: 18px; background: var(--panel); border-radius: 20px;
+    box-shadow: var(--shadow-sm); padding: 18px; margin-bottom: 16px;
+  }
+  .booking-card.today { border-left: 3px solid var(--ball); }
+  .booking-photo { width: 96px; height: 96px; border-radius: 12px; object-fit: cover; flex: none; }
+  .booking-body { flex: 1; min-width: 0; }
+  .today-chip {
+    display: inline-flex; align-items: center; font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: .06em; text-transform: uppercase; background: var(--ball); color: var(--ball-ink);
+    border-radius: 999px; padding: 4px 11px; margin-bottom: 8px;
+  }
+  .booking-title { font-family: var(--display); font-weight: 700; font-size: 16.5px; letter-spacing: -0.01em; line-height: 1.3; }
+  .booking-when { font-size: 14px; color: var(--ink); margin-top: 6px; }
+  .booking-addr { font-size: 13px; color: var(--ink-soft); margin-top: 3px; }
+  .booking-ref { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); margin-top: 8px; letter-spacing: .02em; }
+
+  .booking-side {
+    flex: none; width: 176px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  }
+  .booking-amt { font-family: var(--mono); font-weight: 600; font-size: 18px; color: var(--ink); }
+  .status-chip {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+    background: var(--band-off); color: var(--court-deep); border-radius: 999px; padding: 4px 11px;
+  }
+  .booking-actions { display: flex; gap: 8px; margin-top: auto; }
+  .btn-sm {
+    height: var(--btn-h-sm); padding: 0 14px; border-radius: var(--btn-radius);
+    background: var(--panel); border: 1px solid var(--hairline); color: var(--ink);
+    font-family: var(--display); font-weight: 600; font-size: 12.5px;
+    display: inline-flex; align-items: center; white-space: nowrap;
+    transition: border-color .15s, background .15s;
+  }
+  .btn-sm:hover { border-color: var(--court); background: #F1F7EC; }
+
+  .quiet-note { font-size: 13px; color: var(--ink-soft); margin-top: 4px; }
+
+  /* ---------- Past bookings list ---------- */
+  .past-list { background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 4px 20px; }
+  .past-row {
+    display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--hairline);
+  }
+  .past-row:last-child { border-bottom: none; }
+  .past-date { font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft); width: 52px; flex: none; }
+  .past-venue { flex: 1; min-width: 0; }
+  .past-venue .name { font-family: var(--display); font-weight: 600; font-size: 14.5px; letter-spacing: -0.005em; }
+  .past-venue .court { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+  .past-duration { font-size: 13px; color: var(--ink-soft); width: 96px; flex: none; }
+  .past-amt { font-family: var(--mono); font-size: 13.5px; color: var(--ink); width: 76px; flex: none; text-align: right; }
+  .past-action { flex: none; width: 150px; text-align: right; }
+  .btn-review {
+    height: var(--btn-h-sm); padding: 0 14px; border-radius: var(--btn-radius);
+    background: var(--ball); color: var(--ball-ink);
+    font-family: var(--display); font-weight: 700; font-size: 12.5px;
+    display: inline-flex; align-items: center; white-space: nowrap; transition: background .15s;
+  }
+  .btn-review:hover { background: #DCF23E; }
+  .reviewed-tag { font-size: 12.5px; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .reviewed-tag .ball-dot { margin: 0; }
+  .reviewed-tag b { color: var(--ink); font-weight: 600; }
+  .link-receipt { font-size: 13px; font-weight: 600; color: var(--court); text-decoration: none; white-space: nowrap; }
+  .link-receipt:hover { color: var(--court-deep); }
+
+  .ball-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ball); outline: 1.5px solid var(--ink); outline-offset: 1px; }
+
+  /* ---------- Reviews panel ---------- */
+  .review-card { background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 22px 24px; margin-bottom: 16px; }
+  .review-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .review-venue .name { font-family: var(--display); font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
+  .review-venue .court { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+  .review-meta { text-align: right; flex: none; }
+  .review-date { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); }
+  .review-rating { margin-top: 6px; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 7px; justify-content: flex-end; }
+  .review-card p.text { margin-top: 14px; color: var(--ink); font-size: 14.5px; }
+  .edit-review { display: inline-block; margin-top: 14px; font-size: 13px; font-weight: 600; color: var(--court); text-decoration: none; }
+  .edit-review:hover { color: var(--court-deep); }
+
+  /* ---------- Right rail ---------- */
+  .rail-card { background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 20px; margin-bottom: 20px; }
+  .rail-card h2 { font-family: var(--display); font-weight: 700; font-size: 15.5px; letter-spacing: -0.005em; margin-bottom: 14px; }
+
+  .profile-top { display: flex; align-items: center; gap: 12px; }
+  .profile-avatar {
+    width: 56px; height: 56px; border-radius: 50%; background: var(--court); color: #fff;
+    font-family: var(--display); font-weight: 700; font-size: 19px; display: grid; place-items: center; flex: none;
+  }
+  .profile-name { font-family: var(--display); font-weight: 700; font-size: 15.5px; }
+  .profile-email { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+  .signed-in {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-soft); margin-top: 14px;
+  }
+  .phone-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--hairline);
+    font-size: 13.5px;
+  }
+  .phone-row .edit-link { font-size: 13px; font-weight: 600; color: var(--court); text-decoration: none; }
+  .phone-row .edit-link:hover { color: var(--court-deep); }
+
+  .pay-card p { font-size: 13.5px; color: var(--ink-soft); }
+  .pay-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .pay-chip {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .03em;
+    border: 1px solid var(--hairline); background: var(--surface); color: var(--ink);
+    border-radius: 999px; padding: 6px 13px;
+  }
+
+  footer {
+    border-top: 1px solid var(--hairline);
+    padding: 28px max(24px, calc((100vw - 1120px) / 2)) 40px;
+    display: flex; gap: 24px; align-items: center; color: var(--ink-soft); font-size: 13px;
+  }
+  footer .wordmark { font-size: 18px; color: var(--ink); }
+  footer nav { display: flex; gap: 22px; flex: 1; }
+  footer a { color: var(--ink-soft); text-decoration: none; }
+  footer a:hover { color: var(--ink); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .list-court, .tab, .btn-sm, .btn-review, .link-receipt, .edit-review { transition: none; }
+  }
+
+  @media (max-width: 980px) {
+    .nav-links { display: none; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .layout { grid-template-columns: 1fr; }
+    .page-head h1 { font-size: 28px; }
+    .booking-card { flex-wrap: wrap; }
+    .booking-side { width: 100%; flex-direction: row; align-items: center; justify-content: space-between; }
+    .booking-actions { margin-top: 0; }
+  }
+
+  @media (max-width: 560px) {
+    .stats { grid-template-columns: 1fr 1fr; }
+    footer { flex-direction: column; align-items: flex-start; gap: 14px; }
+    footer nav { flex-wrap: wrap; }
+    .past-row { flex-wrap: wrap; row-gap: 8px; }
+    .past-date { order: 1; width: auto; }
+    .past-venue { order: 2; flex-basis: 100%; }
+    .past-duration { order: 3; width: auto; }
+    .past-amt { order: 4; width: auto; text-align: left; }
+    .past-action { order: 5; width: auto; text-align: left; margin-left: auto; }
+    .review-top { flex-wrap: wrap; }
+    .review-meta { text-align: left; }
+    .review-rating { justify-content: flex-start; }
+  }
+
+  /* ---------- Mockup page switcher (dev-only aid, not part of product UI) ---------- */
+  .mock-switcher { position: fixed; right: 24px; bottom: 24px; z-index: 9999; }
+  .mock-switcher summary {
+    list-style: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 38px; padding: 0 16px; border-radius: 12px;
+    background: var(--ink); color: #fff;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    box-shadow: 0 12px 32px rgba(12, 31, 22, .25);
+  }
+  .mock-switcher summary::marker { content: ""; }
+  .mock-switcher summary::-webkit-details-marker { display: none; }
+  .mock-switcher summary::after { content: "▾"; font-size: 9px; }
+  .mock-switcher[open] summary::after { content: "▴"; }
+  .mock-switcher .ms-panel {
+    position: absolute; right: 0; bottom: calc(100% + 10px);
+    width: 216px; background: var(--panel);
+    border: 1px solid var(--hairline, var(--line, #E5EAE2));
+    border-radius: 20px;
+    box-shadow: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05), 0 12px 32px rgba(12, 31, 22, .12);
+    padding: 8px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .mock-switcher .ms-row {
+    display: block; padding: 9px 12px; border-radius: 10px;
+    font-family: var(--body); font-size: 13px; font-weight: 500; color: var(--ink); text-decoration: none;
+  }
+  .mock-switcher a.ms-row:hover { background: var(--surface); }
+  .mock-switcher .ms-row.ms-current { background: var(--band-off, #EAF2E4); color: var(--court-deep); font-weight: 600; cursor: default; }
+</style>
+
+<nav class="nav">
+  <a class="wordmark" href="#">oncourt</a>
+  <div class="nav-links">
+    <a href="#">Find courts</a>
+    <a href="#" aria-current="page">My bookings</a>
+  </div>
+  <a class="list-court" href="#">List your court</a>
+  <span class="avatar">CY</span>
+</nav>
+
+<main class="wrap">
+  <header class="page-head">
+    <span class="kicker">Player · Tacloban City</span>
+    <h1>My bookings</h1>
+    <p>Your court time, receipts, and reviews in one place.</p>
+  </header>
+
+  <div class="stats">
+    <div class="stat-card">
+      <span class="s-kicker">Upcoming</span>
+      <div class="value">2</div>
+    </div>
+    <div class="stat-card">
+      <span class="s-kicker">Hours played (Aug)</span>
+      <div class="value">12</div>
+    </div>
+    <div class="stat-card">
+      <span class="s-kicker">Courts visited</span>
+      <div class="value">5</div>
+    </div>
+    <div class="stat-card">
+      <span class="s-kicker">Total spent</span>
+      <div class="value">₱4,180</div>
+    </div>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="upcoming" role="tab" aria-selected="true">Upcoming (2)</button>
+    <button class="tab" data-tab="past" role="tab" aria-selected="false">Past (6)</button>
+    <button class="tab" data-tab="reviews" role="tab" aria-selected="false">My reviews (2)</button>
+  </div>
+
+  <div class="layout">
+    <div class="panels">
+
+      <!-- ============ Upcoming ============ -->
+      <section class="panel active" data-panel="upcoming" aria-label="Upcoming bookings">
+
+        <article class="booking-card today">
+          <img class="booking-photo" src="https://images.unsplash.com/photo-1747027694225-cbf12dd20826?q=70&w=300&auto=format&fit=crop" alt="Palo Verde Pickle Club court">
+          <div class="booking-body">
+            <span class="today-chip">Today · in 3 hours</span>
+            <div class="booking-title">Palo Verde Pickle Club — Court A2 (Indoor)</div>
+            <div class="booking-when">Fri, Aug 1 · 7 – 9 AM · 2 hours</div>
+            <div class="booking-addr">Marasbaras, Tacloban City</div>
+            <div class="booking-ref">REF OC-4F72A1</div>
+          </div>
+          <div class="booking-side">
+            <span class="booking-amt">₱622.90</span>
+            <span class="status-chip">Confirmed</span>
+            <div class="booking-actions">
+              <button class="btn-sm">View receipt</button>
+              <button class="btn-sm">Get directions</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="booking-card">
+          <img class="booking-photo" src="https://images.unsplash.com/photo-1756477558468-b3e485757470?q=70&w=300&auto=format&fit=crop" alt="Smash Zone Tacloban court">
+          <div class="booking-body">
+            <div class="booking-title">Smash Zone – Tacloban — Court 3 (Outdoor)</div>
+            <div class="booking-when">Sun, Aug 3 · 6 – 7 PM · 1 hour</div>
+            <div class="booking-addr">Abucay, Tacloban City</div>
+            <div class="booking-ref">REF OC-8B31C7</div>
+          </div>
+          <div class="booking-side">
+            <span class="booking-amt">₱250.00</span>
+            <span class="status-chip">Confirmed</span>
+            <div class="booking-actions">
+              <button class="btn-sm">View receipt</button>
+              <button class="btn-sm">Get directions</button>
+            </div>
+          </div>
+        </article>
+
+        <p class="quiet-note">Bookings are final — no cancellations. Message the venue if something comes up.</p>
+      </section>
+
+      <!-- ============ Past ============ -->
+      <section class="panel" data-panel="past" aria-label="Past bookings">
+        <div class="past-list">
+
+          <div class="past-row">
+            <span class="past-date">Jul 28</span>
+            <div class="past-venue">
+              <div class="name">Palo Verde Pickle Club</div>
+              <div class="court">Court A2 (Indoor)</div>
+            </div>
+            <span class="past-duration">2 hours</span>
+            <span class="past-amt">₱600</span>
+            <span class="past-action"><button class="btn-review">Leave a review</button></span>
+          </div>
+
+          <div class="past-row">
+            <span class="past-date">Jul 21</span>
+            <div class="past-venue">
+              <div class="name">Rally Republic</div>
+              <div class="court">Court 2 (Indoor)</div>
+            </div>
+            <span class="past-duration">1 hour</span>
+            <span class="past-amt">₱280</span>
+            <span class="past-action"><button class="btn-review">Leave a review</button></span>
+          </div>
+
+          <div class="past-row">
+            <span class="past-date">Jul 14</span>
+            <div class="past-venue">
+              <div class="name">Dinky's Yard</div>
+              <div class="court">Court 1 (Outdoor)</div>
+            </div>
+            <span class="past-duration">1.5 hours</span>
+            <span class="past-amt">₱375</span>
+            <span class="past-action">
+              <span class="reviewed-tag"><span class="ball-dot"></span>Reviewed · <b>5.0</b></span>
+            </span>
+          </div>
+
+          <div class="past-row">
+            <span class="past-date">Jul 7</span>
+            <div class="past-venue">
+              <div class="name">Bayside Pickle Hub</div>
+              <div class="court">Court 4 (Outdoor)</div>
+            </div>
+            <span class="past-duration">1 hour</span>
+            <span class="past-amt">₱260</span>
+            <span class="past-action">
+              <span class="reviewed-tag"><span class="ball-dot"></span>Reviewed · <b>4.0</b></span>
+            </span>
+          </div>
+
+          <div class="past-row">
+            <span class="past-date">Jun 29</span>
+            <div class="past-venue">
+              <div class="name">Smash Zone – Tacloban</div>
+              <div class="court">Court 1 (Indoor)</div>
+            </div>
+            <span class="past-duration">2 hours</span>
+            <span class="past-amt">₱560</span>
+            <span class="past-action"><a class="link-receipt" href="#">View receipt</a></span>
+          </div>
+
+          <div class="past-row">
+            <span class="past-date">Jun 22</span>
+            <div class="past-venue">
+              <div class="name">Rally Republic</div>
+              <div class="court">Court 1 (Indoor)</div>
+            </div>
+            <span class="past-duration">1 hour</span>
+            <span class="past-amt">₱280</span>
+            <span class="past-action"><a class="link-receipt" href="#">View receipt</a></span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ============ My reviews ============ -->
+      <section class="panel" data-panel="reviews" aria-label="My reviews">
+
+        <article class="review-card">
+          <div class="review-top">
+            <div class="review-venue">
+              <div class="name">Dinky's Yard</div>
+              <div class="court">Court 1 (Outdoor)</div>
+            </div>
+            <div class="review-meta">
+              <span class="review-date">Jul 15</span>
+              <div class="review-rating"><span class="ball-dot"></span>5.0</div>
+            </div>
+          </div>
+          <p class="text">Ang linis ng court, at hindi mainit kahit tanghali. Sulit. Yung lighting sa gabi maganda rin, pwede pa maglaro after 8PM nang walang problema.</p>
+          <a class="edit-review" href="#">Edit review</a>
+        </article>
+
+        <article class="review-card">
+          <div class="review-top">
+            <div class="review-venue">
+              <div class="name">Bayside Pickle Hub</div>
+              <div class="court">Court 4 (Outdoor)</div>
+            </div>
+            <div class="review-meta">
+              <span class="review-date">Jul 8</span>
+              <div class="review-rating"><span class="ball-dot"></span>4.0</div>
+            </div>
+          </div>
+          <p class="text">Good breeze off the bay and the nets are in decent shape, but the outdoor lights flicker a bit past 6 PM. Staff were quick to top up the water station when we asked.</p>
+          <a class="edit-review" href="#">Edit review</a>
+        </article>
+
+      </section>
+
+    </div>
+
+    <!-- ============ Right rail ============ -->
+    <aside>
+      <section class="rail-card">
+        <div class="profile-top">
+          <span class="profile-avatar">CY</span>
+          <div>
+            <div class="profile-name">Chino Young</div>
+            <div class="profile-email">chino.young@goabroad.com</div>
+          </div>
+        </div>
+        <div class="signed-in">Signed in with Google</div>
+        <div class="phone-row">
+          <span>+63 917 •••  4821</span>
+          <a class="edit-link" href="#">Edit</a>
+        </div>
+      </section>
+
+      <section class="rail-card pay-card">
+        <h2>How you pay</h2>
+        <p>GCash, Maya, or card — chosen at checkout. OnCourt doesn't store your payment details.</p>
+        <div class="pay-chips">
+          <span class="pay-chip">GCash</span>
+          <span class="pay-chip">Maya</span>
+          <span class="pay-chip">Card</span>
+        </div>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<footer>
+  <a class="wordmark" href="#">oncourt</a>
+  <nav>
+    <a href="#">Find courts</a>
+    <a href="#">List your court</a>
+    <a href="#">Help</a>
+    <a href="#">Terms</a>
+  </nav>
+  <span>© 2026 OnCourt · Philippines</span>
+</footer>
+
+<script>
+  (function () {
+    var tabs = document.querySelectorAll('.tab');
+    var panels = document.querySelectorAll('.panel');
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        tabs.forEach(function (t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+        tab.classList.add('active');
+        tab.setAttribute('aria-selected', 'true');
+        var target = tab.dataset.tab;
+        panels.forEach(function (p) {
+          p.classList.toggle('active', p.dataset.panel === target);
+        });
+      });
+    });
+  })();
+</script>
+
+<details class="mock-switcher">
+  <summary>Pages</summary>
+  <div class="ms-panel">
+    <a class="ms-row" href="index.html">Index</a>
+    <a class="ms-row" href="home.html">Home</a>
+    <a class="ms-row" href="search-results.html">Search results</a>
+    <a class="ms-row" href="branch-page.html">Branch page</a>
+    <a class="ms-row" href="owner-profile.html">Owner profile</a>
+    <a class="ms-row" href="owner-dashboard.html">Owner dashboard</a>
+    <span class="ms-row ms-current">Player dashboard</span>
+    <a class="ms-row" href="checkout.html">Checkout</a>
+    <a class="ms-row" href="admin-approvals.html">Admin approvals</a>
+  </div>
+</details>

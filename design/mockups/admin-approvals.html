@@ -1,7 +1,7 @@
 <!-- @dsCard group="Pages" name="Admin — approval queue" -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Approval queue — Piko Admin</title>
+<title>Approval queue — OnCourt Admin</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
 
@@ -77,7 +77,7 @@
   }
 
   /* ---------- Main ---------- */
-  .main { padding: 32px max(24px, calc((100vw - 1200px) / 2)) 64px 32px; max-width: 1200px; }
+  .main { max-width: 1120px; margin: 0 auto; padding: 32px 24px 64px; }
 
   .topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 16px 20px; margin-bottom: 26px; }
   .topbar h1 { font-family: var(--display); font-weight: 800; font-size: 26px; letter-spacing: -0.025em; margin-right: auto; }
@@ -220,7 +220,7 @@
     .side-nav { flex-direction: row; gap: 4px; }
     .side-nav a { white-space: nowrap; }
     .count-badge { margin-left: 6px; }
-    .main { padding: 24px 16px 48px; max-width: 100%; }
+    .main { padding: 24px 24px 48px; }
     .content-grid { grid-template-columns: 1fr; }
     .right-rail { position: static; }
     .card-detail { grid-template-columns: 1fr; }
@@ -268,7 +268,7 @@
 <div class="shell">
   <aside class="sidebar">
     <div class="brand">
-      <a class="wordmark" href="#">piko</a>
+      <a class="wordmark" href="#">oncourt</a>
       <span class="admin-tag">admin</span>
     </div>
     <nav class="side-nav">
@@ -299,7 +299,7 @@
         <article class="approval-card">
           <div class="card-head">
             <div class="court-id">
-              <h2>Court 7 — Smash Zone – Tagum</h2>
+              <h2>Court 7 — Smash Zone – Tacloban</h2>
               <span class="owner-chip"><span class="chip-avatar">SZ</span>Smash Zone</span>
             </div>
             <div class="card-meta">
@@ -329,7 +329,7 @@
         <article class="approval-card">
           <div class="card-head">
             <div class="court-id">
-              <h2>Court 3 — Rally Republic – Davao</h2>
+              <h2>Court 3 — Rally Republic – Tacloban</h2>
               <span class="owner-chip"><span class="chip-avatar">RR</span>Rally Republic</span>
             </div>
             <div class="card-meta">
@@ -359,7 +359,7 @@
         <article class="approval-card">
           <div class="card-head">
             <div class="court-id">
-              <h2>Court 2 — Palo Verde Pickle Club – Tagum</h2>
+              <h2>Court 2 — Palo Verde Pickle Club – Tacloban</h2>
               <span class="owner-chip"><span class="chip-avatar">PV</span>Palo Verde Pickle Club</span>
             </div>
             <div class="card-meta">
@@ -390,7 +390,7 @@
         <article class="approval-card">
           <div class="card-head">
             <div class="court-id">
-              <h2>Court 1 — Dinky’s Yard – Visayan Village</h2>
+              <h2>Court 1 — Dinky’s Yard – V&G Subdivision</h2>
               <span class="owner-chip"><span class="chip-avatar">DY</span>Dinky’s Yard</span>
             </div>
             <div class="card-meta">
@@ -453,6 +453,7 @@
     <a class="ms-row" href="branch-page.html">Branch page</a>
     <a class="ms-row" href="owner-profile.html">Owner profile</a>
     <a class="ms-row" href="owner-dashboard.html">Owner dashboard</a>
+    <a class="ms-row" href="player-dashboard.html">Player dashboard</a>
     <a class="ms-row" href="checkout.html">Checkout</a>
     <span class="ms-row ms-current">Admin approvals</span>
   </div>
