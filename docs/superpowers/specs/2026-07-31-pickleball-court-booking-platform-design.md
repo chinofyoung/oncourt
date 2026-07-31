@@ -46,7 +46,11 @@ A responsive web app where players find and book pickleball courts near them, co
   - Owner: `/dashboard/*`
   - Admin: `/admin/*`
 - **Backend:** Supabase — Postgres (data), Supabase Auth (Google OIDC), Supabase Storage (branch and court photos). No Edge Functions; all server logic is Next.js server-side code.
-- **Sessions:** `@supabase/ssr` with cookie-based sessions and a Next.js middleware that refreshes tokens on navigation.
+- **Sessions:** `@supabase/ssr` with cookie-based sessions and a Next.js proxy/middleware that refreshes tokens on navigation.
+  - **Use `supabase.auth.getClaims()`** to protect pages and read the user server-side. Never trust `getSession()` in server code. Projects created after 2025-05-01 default to asymmetric (RSA) JWT signing keys, so `getClaims()` verifies locally against the JWKS endpoint instead of making a network call per request.
+  - **Never read authorization data from `user_metadata`** — it is user-editable and appears in `auth.jwt()`. Our roles live in `profiles.role` and are read server-side, which sidesteps this entirely.
+  - **Pin `@supabase/ssr` to an exact version and commit the lockfile.** The package is mid-reimplementation: v0.4 introduced a new `getAll`/`setAll` cookie API and the older API is slated for removal at v1.0.0. Do not write these clients from memory — read the README of the pinned version in `node_modules`, which is guaranteed to match the installed code.
+- **Public env vars:** `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The secret key and database URL are server-only and never prefixed `NEXT_PUBLIC_`.
 - **Data access:** server-only. The browser never queries Postgres. All reads and writes go through Server Components, Server Actions, and Route Handlers.
 - **Query layer:** Drizzle as a typed query builder. Schema truth lives in versioned SQL under `supabase/migrations`; `drizzle-kit pull` regenerates `schema.ts` from the live database after each migration. Drop to raw SQL where clearer.
 - **Migrations:** Supabase CLI. Local development runs the Supabase stack in Docker (`supabase start`), which is a required local prerequisite. Hosted Supabase projects for staging and production.
@@ -56,11 +60,34 @@ A responsive web app where players find and book pickleball courts near them, co
 
 ### Authorization model
 
-TypeScript is the primary security boundary. Every Server Action and Route Handler resolves the session, loads `profiles.role`, and checks authorization before touching data. Route groups are UI organization only, never a security boundary.
+TypeScript is the primary security boundary. Every Server Action and Route Handler resolves the session, loads `profiles.role`, and checks authorization before touching data through a small helper set — `requireUser()`, `requireOwnerOf(branchId)`, `requireAdmin()`. A test asserts every exported Server Action calls one of them. Route groups are UI organization only, never a security boundary.
 
-RLS is enabled on every table with restrictive policies, but its role here is **defense-in-depth against a different access path**, not a check on our own queries. This trade-off is deliberate and worth stating plainly: Drizzle connects to Postgres as a database role, not as an end user, so it does not carry a JWT and RLS does not constrain it. RLS therefore protects against a leaked anon key or a future client-direct feature — it is not what stops our own server code from over-fetching. If we later want RLS to apply to our queries too, the path is `SET LOCAL role` plus `request.jwt.claims` per transaction; that is out of scope for now.
+**The threat.** The **publishable key** is public — client-side code needs it for `signInWithOAuth`, so it ships in the browser bundle. (Publishable/secret keys are current; `anon`/`service_role` are legacy compatibility names.) If the Data API is reachable and the `anon`/`authenticated` roles hold grants, anyone with that key can read every row they are granted. That is the threat model, and it is not hypothetical.
 
-Secrets (service role key, PayMongo keys, Resend key) exist only in server environment variables.
+**Lockdown is layered, strongest measure first.** Each layer alone would be sufficient; together they mean no single mistake is fatal.
+
+1. **Disable the Data API entirely.** We never use PostgREST — all access is Drizzle over a direct Postgres connection. With the Data API off (Dashboard → Data API → *Enable Data API* off), "none of the auto-generated REST endpoints respond, regardless of grants or RLS." This deletes the attack surface rather than guarding it, and is the single highest-value security action in the whole project.
+2. **No grants.** As of Supabase's 2026-04-28 breaking change, new tables in `public` are **not** auto-exposed to the Data API — the default for projects created after 2026-05-30, enforced everywhere from 2026-10-30. Our project is new, so we inherit the safe default. We additionally revoke explicitly, with the role-qualified syntax that actually works:
+   ```sql
+   alter default privileges for role postgres in schema public
+     revoke select, insert, update, delete on tables from anon, authenticated, service_role;
+
+   revoke all on all tables in schema public from anon, authenticated;
+   ```
+   The `for role postgres` clause is required — default privileges are keyed to the role that creates the objects, so omitting it silently does nothing.
+3. **RLS enabled, zero policies.** Because the browser never queries Postgres, no policy needs to exist. RLS enabled with no policies denies all access to non-bypassing roles — simpler and strictly safer than hand-written policies, since a policy that does not exist cannot have a hole in it.
+
+Sign-in is unaffected by all of this — it goes through the Auth API, not the Data API.
+
+**Do not use `force row level security`.** It is the natural "more secure" instinct and it would break the application: forcing RLS subjects the table owner to policies too, and with zero policies that denies our own queries.
+
+Policies get written only if a client-direct feature is ever added. The deferred Realtime slice does not need them (it authorizes on the broadcast topic, not via table RLS), so plausibly never.
+
+**Do not build `SET LOCAL role` / `request.jwt.claims` machinery** to make RLS apply to our own queries. That is for large teams on multi-tenant SaaS where one missed check leaks another tenant. With a handful of Server Actions, the helper set above plus its coverage test is more testable and far less machinery.
+
+**Application database role.** Drizzle connects over a direct Postgres connection as a database role, so it carries no JWT and RLS does not constrain it. Least privilege still applies at the *grant* level: the app role should hold only the DML it needs (no DDL, no `DELETE` on `bookings` or `payments` — expiry is a status flip, and payment records are an audit trail). **Open item for implementation:** creating a dedicated role with `bypassrls` requires superuser, which hosted Supabase does not give you. Verify whether a least-privilege role is achievable on the hosted project; if not, document the fallback of connecting as `postgres` (the table owner, which bypasses RLS as long as we never force it) and keep the scoped-grants goal for later.
+
+Secrets (service role key, PayMongo keys, Resend key, database URL) exist only in server environment variables.
 
 ### Realtime
 
@@ -75,10 +102,14 @@ Hierarchy: **Owner (profile) → Branches → Courts**. An owner may have many b
 ### Cross-cutting conventions
 
 - **All money is `integer` centavos.** Never floats, never whole pesos. Processor fees produce fractional pesos (₱22.30) and the gross-up formula produces worse; centavos keep every amount exact. Display formatting divides by 100 at the edge.
+  - This is a **deliberate deviation** from the usual "use `numeric` for money" guidance (including Supabase's own Postgres best-practices rule), so don't "fix" it later. Both representations are exact — the rule exists to rule out floats, which we are not using. Centavos win here for two specific reasons: **PayMongo's API denominates amounts in centavos**, so matching its unit removes a conversion layer at precisely the boundary where a mistake costs real money; and Postgres drivers return `numeric` as a *string* to avoid precision loss, which would mean adding a decimal library and risking a `parseFloat` in the fee engine. Integer centavos are exact in plain JavaScript up to 2^53.
 - **Percentages are integer basis points** (1000 = 10%), for the same reason.
-- Primary keys are `uuid` with `gen_random_uuid()`.
+- Primary keys are `uuid` with `gen_random_uuid()`. (`profiles.id` must be `uuid` to match `auth.users.id`; the rest follow for consistency.)
 - Timestamps are `timestamptz`. Application timezone is `Asia/Manila`; conversion happens at the presentation edge.
 - Enums are Postgres enum types: `user_role`, `court_environment`, `court_status`, `booking_status`, `payout_status`, `platform_fee_mode`, `processor_fee_bearer`.
+- **Every foreign key column gets an explicit index.** Postgres does not create them automatically, and unindexed FKs make both joins and `ON DELETE CASCADE` table scans. This matters most on `bookings` (`court_id`, `branch_id`, `player_id`) and on the per-court child tables.
+- **All identifiers are lowercase `snake_case`**, unquoted. Drizzle is configured with `casing: 'snake_case'` so TypeScript camelCase maps automatically rather than generating quoted mixed-case columns that then need quoting forever.
+- **Migrations are idempotent.** Postgres has no `ADD CONSTRAINT IF NOT EXISTS`, so constraints are added inside `DO $$ ... $$` blocks that check `pg_constraint` first.
 
 ### Tables
 
@@ -141,11 +172,34 @@ Hierarchy: **Owner (profile) → Branches → Courts**. An owner may have many b
 
 ### Booking & payment
 
-1. On a branch page, player picks a court, date, and consecutive hour slots. A Server Action computes fees in TypeScript, then calls the `create_booking_hold` Postgres function to create a `pending_payment` booking.
+1. On a branch page, player picks a court, date, and consecutive hour slots. A Server Action computes fees in TypeScript, then creates the `pending_payment` booking inside **one Drizzle transaction**. All logic stays in TypeScript — there is no `create_booking_hold` database function.
 
-   **Why this one piece of logic lives in the database:** an exclusion constraint predicate cannot call `now()`, so an expired-but-unswept hold would keep blocking its slot. `create_booking_hold` therefore does three things in a single transaction — expire stale `pending_payment` rows for that court, enforce the max-3-concurrent-holds rule for the player, then insert the new booking and let the exclusion constraint arbitrate. Hold correctness depends on no scheduled job running. This is the only business logic in SQL; fee math, payment calls, and email stay in TypeScript.
+   **Why it must be a single transaction:** an exclusion constraint predicate cannot call `now()`, so an expired-but-unswept hold would keep blocking its slot. The transaction therefore does three things atomically:
+
+   ```ts
+   await db.transaction(async (tx) => {
+     // 1. Serialize this player's concurrent hold attempts — cheap, per-player,
+     //    released on commit. No contention between different players.
+     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'hold:' + playerId}))`)
+
+     // 2. Expired holds on this court stop blocking the slot.
+     await tx.update(bookings).set({ status: 'expired' }).where(and(
+       eq(bookings.courtId, courtId),
+       eq(bookings.status, 'pending_payment'),
+       lte(bookings.expiresAt, new Date()),
+     ))
+
+     // 3. Enforce max-3-holds, then insert — the exclusion constraint arbitrates
+     //    against any concurrent booking of the same slot.
+     return tx.insert(bookings).values(hold).returning()
+   })
+   ```
+
+   The exclusion constraint is enforced at the index level and locks correctly across concurrent transactions at any isolation level: the second inserter blocks until the first commits, then fails with `23P01`. A database function would add nothing here — atomicity comes from the transaction, not from the logic's location — while costing testability and a second language.
+
+   The per-player advisory lock is what makes max-3-holds a real invariant rather than a best-effort count. Without it, two simultaneous requests could each see 2 existing holds and each insert a third. The lock is keyed on the player, so it never serializes unrelated traffic — the only contention is between one player's own concurrent requests, which is exactly the case being defended against.
 2. The pending booking holds the slot for **15 minutes** (`platform_settings.hold_duration_minutes`), recorded as `expires_at`. A review step shows the price breakdown; if the owner's fee config sets the processor-fee bearer to `player`, the player picks a payment method here and the exact grossed-up transaction fee appears as a line item. Server creates a PayMongo checkout session (restricted to the chosen method in that case); player is redirected to pay (GCash/Maya/card).
-3. Expiry is **computed, not scheduled**: any `pending_payment` booking with `expires_at <= now()` is already dead and is treated as such by reads and by `create_booking_hold`. A `pg_cron` job runs every minute to flip stale rows to `expired`, purely so the UI and reports don't show phantom holds. If cron never fires, no slot is wrongly held.
+3. Expiry is **computed, not scheduled**: any `pending_payment` booking with `expires_at <= now()` is already dead and is treated as such by availability reads and by the hold transaction above. A `pg_cron` job runs every minute to flip stale rows to `expired`, purely so the UI and reports don't show phantom holds. If cron never fires, no slot is wrongly held. The janitor is a plain `UPDATE` with no business logic in it.
 4. The PayMongo **webhook** (`payment.paid`) is the source of truth: it flips the booking to `confirmed` and triggers confirmation emails to player and owner. The browser redirect alone never confirms a booking.
 5. A `pg_cron` job marks confirmed bookings `completed` once the slot's end time has passed, making them reviewable.
 6. **No cancellations in MVP.** Disputes go to the owner/admin; admin performs refunds manually in the provider dashboard and records the booking as `refunded_manual`.
@@ -223,7 +277,7 @@ Supabase Storage, two buckets: `branch-photos` and `court-photos`. Public read; 
 - **Webhook after hold expiry:** if payment lands after the booking expired, re-confirm if the slot is still free; otherwise alert admin for a manual refund (rare; logged).
 - **Duplicate webhooks:** idempotent by `payments.provider_ref` unique constraint — replays are no-ops at the database level.
 - **Suspension with future bookings:** confirmed bookings stay honored; the court/branch just leaves search. Admin handles case-by-case.
-- **Overlapping hold spam:** a player may hold at most 3 pending bookings at a time, enforced inside `create_booking_hold`.
+- **Overlapping hold spam:** a player may hold at most 3 pending bookings at a time, enforced inside the hold transaction and made race-free by the per-player advisory lock.
 - **Geolocation denied:** fall back to city/area picker; search still works.
 - **Payment provider outage:** if the checkout session can't be created, the just-created pending booking is deleted immediately and the player sees a retry message — no orphaned holds.
 - **`pg_cron` not firing:** hold expiry and slot release are unaffected (expiry is computed). Only cosmetic staleness in admin views.
@@ -232,8 +286,10 @@ Supabase Storage, two buckets: `branch-photos` and `court-photos`. Public read; 
 
 Tests run against the **local Supabase stack, not mocks.** The constraints are the logic here — a mocked database would verify nothing that matters.
 
-- **Integration (Vitest + local Supabase):** slot availability and overlap, hold expiry semantics including the expire-then-insert transaction, the max-3-holds rule, webhook idempotency and out-of-order handling, authorization checks on every Server Action, rate-band coverage validation, booking-amount calculation across bands, fee resolution (global default vs per-owner override) and math for all three processor-fee bearers including gross-up rounding, review eligibility.
-- **Concurrency:** a dedicated test fires N parallel `create_booking_hold` calls at one slot and asserts exactly one winner and N−1 clean `23P01` failures.
+- **Integration (Vitest + local Supabase):** slot availability and overlap, hold expiry semantics including the expire-then-insert transaction, the max-3-holds rule, webhook idempotency and out-of-order handling, rate-band coverage validation, booking-amount calculation across bands, fee resolution (global default vs per-owner override) and math for all three processor-fee bearers including gross-up rounding, review eligibility.
+- **Concurrency:** one test fires N parallel hold transactions at a single slot and asserts exactly one winner and N−1 clean `23P01` failures. A second fires N parallel holds for *one player* across different slots and asserts the max-3 ceiling holds — this is what proves the advisory lock works.
+- **Public-key lockdown:** a test that uses the public publishable key, enumerates every table in `public` from the catalog, and asserts the Data API returns no rows for each. Enumerating from the catalog rather than a hardcoded list is the point: a table added later without lockdown fails the suite. This converts the security posture from a belief into a verified fact.
+- **Authorization coverage:** a test asserting every exported Server Action calls one of `requireUser` / `requireOwnerOf` / `requireAdmin`, so a new action cannot ship unguarded.
 - **Schema:** assertions that the exclusion constraints and unique constraints exist and reject the cases they are meant to reject.
 - **Payment adapter:** integration tests against PayMongo test mode; webhook signature verification.
 - **E2E (Playwright):** one happy path — search → pick court → book → mock payment → confirmed booking appears in "My bookings" and owner calendar.
@@ -244,12 +300,13 @@ Tests run against the **local Supabase stack, not mocks.** The constraints are t
 - **Payment provider:** PayMongo first; interface keeps Xendit possible.
 - **Hold duration:** 15 minutes.
 - **Drizzle + PostGIS:** Drizzle's PostGIS type support is thin. `branches.location` may need a custom type or raw SQL when search is implemented. The column and index are created in the foundation so this never requires a migration.
+- **Least-privilege app role:** whether a dedicated `bypassrls` database role can be created on hosted Supabase (it normally requires superuser) is unverified. Resolve during foundation; fall back to connecting as `postgres` and document it. See Authorization model.
 
 ## Implementation Phasing
 
 The MVP is too large for a single implementation plan. Slices, each getting its own plan:
 
-1. **Foundation** (next) — scaffold Next.js + Supabase, Google auth with the three roles, full schema with constraints, RLS, PostGIS column, storage buckets, and one vertical slice: the branch-page availability grid reading real data, with slot clicks creating real holds via `create_booking_hold`, proven by the concurrency test. Stops before payment.
+1. **Foundation** (next) — scaffold Next.js + Supabase, Google auth with the three roles, full schema with constraints and FK indexes, RLS lockdown plus its anon-key test, PostGIS column, storage buckets, and one vertical slice: the branch-page availability grid reading real data, with slot clicks creating real holds through the transaction above, proven by the concurrency tests. Stops before payment.
 2. Payments — PaymentProvider interface, PayMongo adapter, checkout, webhook, fee math, confirmation emails.
 3. Owner listing management — branch/court CRUD, rate-band editor, photo upload.
 4. Admin panel — approval queue, suspensions, fee settings.

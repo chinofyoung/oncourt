@@ -28,11 +28,18 @@ courts across branches, and admins moderate listings. Bookings are paid online
   migrations in `supabase/migrations`; PayMongo behind a `PaymentProvider`
   interface; Resend for email.
 - Data access is **server-only** — the browser never queries Postgres. All reads
-  and writes go through Server Components, Server Actions, and Route Handlers.
-  TypeScript is the security boundary; RLS is defense-in-depth (Drizzle connects
-  as a DB role, so RLS does not constrain our own queries).
+  and writes go through Server Components, Server Actions, and Route Handlers,
+  each guarded by `requireUser` / `requireOwnerOf` / `requireAdmin`. TypeScript
+  is the security boundary.
+- RLS is **enabled on every table with zero policies** (deny-by-default), because
+  the public anon key ships in the browser and must not reach any table. Do NOT
+  add policies without reason, and do NOT use `force row level security` — it
+  would subject the owner role to those non-existent policies and break the app.
 - All money is stored as `integer` centavos; percentages as integer basis points.
-  Never floats.
+  Never floats — and deliberately not `numeric`, because PayMongo denominates in
+  centavos and `numeric` returns as a string in JS. Don't "fix" this to `numeric`.
+- Identifiers are lowercase `snake_case`; Drizzle uses `casing: 'snake_case'`.
+  Index every foreign key explicitly.
 - Schema truth is the SQL migration files, not `schema.ts` — after a migration,
   regenerate types with `drizzle-kit pull`.
 - Tests run against the local Supabase stack (Docker), not mocks: the DB
