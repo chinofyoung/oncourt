@@ -6,21 +6,22 @@
   @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
 
   :root {
-    --ink: #0E2A1F;
-    --ink-soft: #48604F;
-    --surface: #F3F6F0;
+    --ink: #0C1F16;
+    --ink-soft: #5B6E60;
+    --surface: #FAFBF8;
     --panel: #FFFFFF;
-    --line: #DCE5D8;
+    --hairline: #E5EAE2;
     --court: #2E6B4F;
-    --court-deep: #17503A;
+    --court-deep: #143D2C;
     --ball: #E8FF54;
-    --ball-ink: #2A3500;
+    --ball-ink: #232D00;
     --booked: #E7ECE2;
     --band-off: #EAF2E4;
     --band-peak: #CDE3C2;
     --display: "Inter Tight", "Inter", "Helvetica Neue", Arial, sans-serif;
     --body: "Inter", "Helvetica Neue", Arial, sans-serif;
     --mono: "Spline Sans Mono", "SF Mono", Menlo, monospace;
+    --shadow-sm: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05);
     /* control sizing tokens (match branch-page.html) */
     --control-h: 56px;   /* hero-level fields/buttons */
     --btn-h: 48px;       /* standard buttons */
@@ -45,7 +46,7 @@
     display: flex; align-items: center; gap: 32px;
     padding: 14px max(24px, calc((100vw - 1120px) / 2));
     background: var(--surface);
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--hairline);
   }
   .wordmark {
     font-family: var(--display); font-weight: 800; font-size: 26px; letter-spacing: -0.03em;
@@ -74,7 +75,7 @@
     align-items: start;
   }
 
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .card { background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-sm); padding: 20px; }
   .card h2 { font-family: var(--display); font-size: 19px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 16px; }
 
   /* ---------- Review card ---------- */
@@ -102,7 +103,7 @@
   .pay-row {
     display: flex; align-items: center; justify-content: space-between; width: 100%;
     height: var(--control-h); padding: 0 16px; border-radius: var(--btn-radius);
-    border: 1px solid var(--line); background: var(--panel); text-align: left;
+    border: 1px solid var(--hairline); background: var(--panel); text-align: left;
     transition: border-color .12s, border-width .12s;
   }
   .pay-row.selected { border: 1.5px solid var(--ink); padding: 0 15.5px; }
@@ -121,7 +122,7 @@
   .line-item { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; padding: 7px 0; }
   .line-item .amt { font-family: var(--mono); }
   .line-item.muted { color: var(--ink-soft); }
-  .divider { border: none; border-top: 1px solid var(--line); margin: 8px 0; }
+  .divider { border: none; border-top: 1px solid var(--hairline); margin: 8px 0; }
   .line-item.subtotal { font-weight: 600; }
   .fee-note { font-size: 12px; color: var(--ink-soft); margin-top: -3px; padding-bottom: 4px; }
   .line-item.total { font-family: var(--display); font-weight: 700; font-size: 16px; padding-top: 10px; }
@@ -153,7 +154,7 @@
 
   /* ---------- Footer (matches home.html) ---------- */
   footer {
-    margin-top: 0; border-top: 1px solid var(--line);
+    margin-top: 0; border-top: 1px solid var(--hairline);
     padding: 28px max(24px, calc((100vw - 1120px) / 2)) 40px;
     display: flex; gap: 24px; align-items: center; color: var(--ink-soft); font-size: 13px;
   }

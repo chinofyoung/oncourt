@@ -234,6 +234,35 @@
     .thumbs { flex-direction: column; }
     .thumbs img { width: 100%; height: 120px; }
   }
+
+  /* ---------- Mockup page switcher (dev-only aid, not part of product UI) ---------- */
+  .mock-switcher { position: fixed; right: 24px; bottom: 24px; z-index: 9999; }
+  .mock-switcher summary {
+    list-style: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 38px; padding: 0 16px; border-radius: 12px;
+    background: var(--ink); color: #fff;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    box-shadow: 0 12px 32px rgba(12, 31, 22, .25);
+  }
+  .mock-switcher summary::marker { content: ""; }
+  .mock-switcher summary::-webkit-details-marker { display: none; }
+  .mock-switcher summary::after { content: "▾"; font-size: 9px; }
+  .mock-switcher[open] summary::after { content: "▴"; }
+  .mock-switcher .ms-panel {
+    position: absolute; right: 0; bottom: calc(100% + 10px);
+    width: 216px; background: var(--panel);
+    border: 1px solid var(--hairline, var(--line, #E5EAE2));
+    border-radius: 20px;
+    box-shadow: 0 1px 2px rgba(12, 31, 22, .06), 0 4px 16px rgba(12, 31, 22, .05), 0 12px 32px rgba(12, 31, 22, .12);
+    padding: 8px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .mock-switcher .ms-row {
+    display: block; padding: 9px 12px; border-radius: 10px;
+    font-family: var(--body); font-size: 13px; font-weight: 500; color: var(--ink); text-decoration: none;
+  }
+  .mock-switcher a.ms-row:hover { background: var(--surface); }
+  .mock-switcher .ms-row.ms-current { background: var(--band-off, #EAF2E4); color: var(--court-deep); font-weight: 600; cursor: default; }
 </style>
 
 <div class="shell">
@@ -414,3 +443,17 @@
     </div>
   </main>
 </div>
+
+<details class="mock-switcher">
+  <summary>Pages</summary>
+  <div class="ms-panel">
+    <a class="ms-row" href="index.html">Index</a>
+    <a class="ms-row" href="home.html">Home</a>
+    <a class="ms-row" href="search-results.html">Search results</a>
+    <a class="ms-row" href="branch-page.html">Branch page</a>
+    <a class="ms-row" href="owner-profile.html">Owner profile</a>
+    <a class="ms-row" href="owner-dashboard.html">Owner dashboard</a>
+    <a class="ms-row" href="checkout.html">Checkout</a>
+    <span class="ms-row ms-current">Admin approvals</span>
+  </div>
+</details>
