@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+:root {
+  /* Brand tokens from design/branding.md (the design source of truth).
+     Only the tokens a built page currently references are defined so far
+     — add more from that doc's Color/Controls tables as pages need them,
+     rather than front-loading the whole palette here.
+     `--band-peak` was removed (was defined but referenced nowhere): the
+     shared time-spine rate-band tint it existed for was dropped from both
+     branding.md and the grid component — see branding.md's Availability
+     grid entry for why. `--band-off` stays — it's independently used for
+     the outdoor-court tag and the "held" banner, not just the dropped tint. */
+  --ink: #0c1f16;
+  --ink-soft: #5b6e60;
+  --surface: #fafbf8;
+  --panel: #ffffff;
+  --hairline: #e5eae2;
+  --court: #2e6b4f;
+  --court-deep: #143d2c;
+  --ball: #e8ff54;
+  --ball-ink: #232d00;
+  --booked: #e7ece2;
+  --band-off: #eaf2e4;
+  --btn-radius: 12px;
+  --btn-h: 48px;
+  --btn-h-sm: 38px;
+}
+
+@theme inline {
+  /* --font-sans/--font-mono drive Tailwind's font-sans/font-mono utilities;
+     --font-display drives a font-display utility (Tailwind v4 generates one
+     utility per @theme `--font-*` key). font-mono is used throughout the
+     availability grid for times/prices, per branding.md's mono-for-data
+     rule. font-display is branding.md's token for headlines/card titles/
+     buttons; today it is only actually applied on src/app/page.tsx's
+     heading and CTA (this fix's own file) — no other page has been
+     retrofitted to use it, so most headings elsewhere still render in the
+     body font. All three point at the Google Fonts loaded in layout.tsx
+     (Inter Tight / Inter / Spline Sans Mono — see that file), not the
+     create-next-app scaffold's Geist/Geist Mono. The scaffold's
+     --color-background/--color-foreground mapping was removed along with
+     the :root variables it pointed at (see the body rule below): as of this
+     fix, no page uses the bg-background/text-foreground/bg-foreground/
+     text-background utility classes those generated (the scaffold's own
+     src/app/page.tsx did — see git history — and has since been replaced
+     with brand-token arbitrary values, the same pattern
+     src/app/login/page.tsx and src/app/venues/[slug]/page.tsx already use). */
+  --font-sans: var(--font-inter), "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-inter-tight), "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-spline-sans-mono), "SF Mono", Menlo, monospace;
+}
+
+body {
+  /* Was `background: var(--background); color: var(--foreground)` against
+     the create-next-app scaffold's own :root variables (#fff light /
+     #0a0a0a dark via a `prefers-color-scheme: dark` override) — entirely
+     disconnected from the brand palette every page actually renders with
+     (--surface/--ink, referenced directly via Tailwind arbitrary values).
+     That mismatch was invisible in light mode by coincidence (#fff vs.
+     --surface's #fafbf8 are close), but a dark-mode viewer got near-black
+     gutters (#0a0a0a) around every page's light --panel/--surface content,
+     since no brand token here was dark-aware. branding.md defines no dark
+     theme yet, so the fix is to point the real page background at the
+     brand tokens directly (light-only, consistently) and drop the
+     scaffold's disconnected dark override rather than half-apply it.
+     font-family was also `Arial, Helvetica, sans-serif` (the scaffold's
+     default, pre-dating any font import) — now the brand body font. */
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}

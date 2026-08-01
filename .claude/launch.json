@@ -6,6 +6,7 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "4173", "--directory", "design/mockups"],
       "port": 4173
-    }
+    },
+    { "name": "oncourt-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 }
   ]
 }
