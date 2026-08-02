@@ -147,18 +147,29 @@ describe('getHomeData', () => {
    * requirement — unlike every other query in this file (including this same
    * function's own `featured`). That meant a city's "N branches" count on
    * the home page could disagree with what a user actually gets back after
-   * clicking through to search that city. Uses a fresh, unique city name so
-   * this assertion can't be satisfied by some other pre-existing branch that
-   * happens to share a real city name.
+   * clicking through to search that city.
+   *
+   * `cities` no longer groups by the free-text `branches.city` column at
+   * all (see queries.ts's `getHomeData` for why: it disagreed with
+   * `/search?city=<slug>`'s radius-based count by 3-10x) — it's a
+   * radius search against each named city's centroid instead. So this
+   * fixture's `city` column value is irrelevant to which chip it would
+   * count toward; what matters is that it sits at Marikina's exact
+   * centroid (matching `seedOwnerWithBranches`'s fixture coordinates) with
+   * only an unpriced court. The regression is still checked the same way:
+   * capture Marikina's branch_count before, insert the unpriced-only
+   * branch, and confirm the count is unchanged after.
    */
   it('does not count a branch whose only approved court has no rate band', async () => {
-    const city = 'Unpriced City ' + crypto.randomUUID()
+    const before = await getHomeData()
+    const marikinaBefore = before.cities.find((c) => c.slug === 'marikina')?.branchCount ?? 0
+
     const ownerId = await seedPlayer()
     await db.execute(sql`update profiles set role = 'owner' where id = ${ownerId}::uuid`)
     const slug = 'home-fixture-' + crypto.randomUUID()
     const branch = await db.execute(sql`
       insert into branches (owner_id, name, slug, address, city, location)
-      values (${ownerId}::uuid, 'Unpriced City Branch', ${slug}, '1 Test St', ${city},
+      values (${ownerId}::uuid, 'Unpriced City Branch', ${slug}, '1 Test St', 'Marikina',
               st_setsrid(st_makepoint(121.1029, 14.6507), 4326)::geography)
       returning id
     `)
@@ -168,7 +179,8 @@ describe('getHomeData', () => {
       values (${branchId}::uuid, 'Unpriced Court', 'indoor', 'approved')
     `)
 
-    const home = await getHomeData()
-    expect(home.cities.map((c) => c.city)).not.toContain(city)
+    const after = await getHomeData()
+    const marikinaAfter = after.cities.find((c) => c.slug === 'marikina')?.branchCount ?? 0
+    expect(marikinaAfter).toBe(marikinaBefore)
   })
 })

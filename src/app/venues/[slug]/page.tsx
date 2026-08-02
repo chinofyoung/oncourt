@@ -208,14 +208,14 @@ export default async function BranchPage(props: {
               aria-hidden
               className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--hairline)] bg-[var(--court)] text-sm font-semibold text-white"
             >
-              {(detail.owner.businessName ?? 'O').charAt(0).toUpperCase()}
+              {(detail.owner.businessName || 'O').charAt(0).toUpperCase()}
             </span>
             <div>
               <p className="font-mono text-[11px] uppercase tracking-[.08em] text-[var(--ink-soft)]">
                 Hosted by
               </p>
               <p className="font-semibold text-[var(--ink)]">
-                {detail.owner.businessName ?? 'Court owner'}
+                {detail.owner.businessName || 'Court owner'}
               </p>
             </div>
           </div>

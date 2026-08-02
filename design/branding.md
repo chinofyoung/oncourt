@@ -68,7 +68,7 @@ Headline scale: h1 68px (desktop) / 44px / 38px (mobile); section h2 30px; card 
 ## Components
 
 - **Nav:** floating over heroes (absolute, transparent, white text + glass pill) or solid `--surface` with hairline border on utility pages. Right side: "List your court" pill + 36px avatar.
-- **Cards:** white, `border-radius: 20px`, no border, shadow `0 1px 2px rgba(12,31,22,.06), 0 4px 16px rgba(12,31,22,.05)`; hover lifts −4px with `0 12px 32px rgba(12,31,22,.12)` and image scale 1.045.
+- **Cards:** white, `border-radius: 20px`, no border, shadow `--shadow-sm` (`0 1px 2px rgba(12,31,22,.06), 0 4px 16px rgba(12,31,22,.05)`); hover lifts −4px with `--shadow-lg` (`0 12px 32px rgba(12,31,22,.12)`) and image scale 1.045.
 - **Section headers:** mono uppercase kicker in `--court` above a display h2; optional right-aligned text link "… →".
 - **Availability grid** (signature component): time rows × court columns; the time spine is a plain mono time column (sticky-left), **not** tinted by rate band — an earlier version of this doc specified a shared off-peak/peak tint on that column (a `--band-peak` token), but the real data model has rate bands *per court*, not per branch, so two courts in the same grid can define different band edges (or even a different count of bands) for the same hour. A single shared tint column would be correct for at most one of the visible courts and misleading for the rest, so it was dropped rather than shipped inaccurate (see `src/lib/booking/availability.ts`/`src/components/availability-grid.tsx`, task-9-report.md fix round 1). Open cells show their price in mono; booked cells flat `--booked`; selected cells lime with 1.5px ink border and court-corner tick marks (7×7px, 2px strokes, top-left + bottom-right).
 

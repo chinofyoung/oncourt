@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Inter_Tight, Spline_Sans_Mono } from "next/font/google";
+import { BRAND_NAME } from "@/components/site/wordmark";
 import "./globals.css";
 
 // design/branding.md, Typography: "Inter Tight" (display: headlines, card
@@ -28,7 +29,7 @@ const splineSansMono = Spline_Sans_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "oncourt — book a pickleball court",
+  title: `${BRAND_NAME} — book a pickleball court`,
   description:
     "Find and book pickleball courts across the Philippines. Laro na.",
 };

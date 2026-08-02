@@ -2,6 +2,7 @@ import 'server-only'
 import { sql, type SQL } from 'drizzle-orm'
 import { db } from '@/db'
 import { manilaWeekday } from '@/lib/date-manila'
+import { CITIES, DEFAULT_CITY_SLUG } from '@/lib/geo/cities'
 
 export type BranchSummary = {
   id: string
@@ -35,6 +36,14 @@ export type SearchFilters = {
 
 const DEFAULT_RADIUS_METERS = 25_000
 const DEFAULT_LIMIT = 50
+
+/**
+ * Mirrors `parseSearchParams`'s radius for a non-default city slug
+ * (src/app/search/page.tsx) — `getHomeData`'s city-chip counts must use the
+ * exact same radius `/search?city=<slug>` does, or the two numbers disagree
+ * again.
+ */
+const CITY_SEARCH_RADIUS_METERS = 12_000
 
 /**
  * The shared "approved AND has a priced rate band" business rule, as a `with`
@@ -145,9 +154,11 @@ export async function searchBranches(filters: SearchFilters): Promise<BranchSumm
   // though its only outdoor court costs ₱500. See
   // "scopes courtCount/minPriceCentavos to the environment filter" in
   // tests/branches/search.test.ts.
-  const environmentFilter = filters.environment
-    ? sql`and c.environment = ${filters.environment}::court_environment`
-    : sql``
+  function environmentFilter(alias: string): SQL {
+    return filters.environment
+      ? sql`and ${sql.raw(alias)}.environment = ${filters.environment}::court_environment`
+      : sql``
+  }
 
   if (filters.maxPriceCentavos !== undefined) {
     conditions.push(sql`ba.min_price_centavos <= ${filters.maxPriceCentavos}`)
@@ -174,6 +185,7 @@ export async function searchBranches(filters: SearchFilters): Promise<BranchSumm
         on oh.court_id = c3.id and oh.day_of_week = ${weekday}
       where c3.branch_id = b.id
         and c3.status = 'approved'
+        ${environmentFilter('c3')}
         and oh.opens_hour <= ${hour} and oh.closes_hour > ${hour}
         and exists (
           select 1 from court_rate_bands rb
@@ -193,13 +205,13 @@ export async function searchBranches(filters: SearchFilters): Promise<BranchSumm
 
   const orderBy =
     filters.sort === 'price'
-      ? sql`ba.min_price_centavos asc`
+      ? sql`ba.min_price_centavos asc, b.name`
       : filters.sort === 'rating'
-        ? sql`r.rating_avg desc nulls last, r.rating_count desc`
+        ? sql`r.rating_avg desc nulls last, r.rating_count desc, b.name`
         : sql`distance_meters asc nulls last`
 
   const query = sql`
-    ${approvedPricedCourtsCte(environmentFilter)}
+    ${approvedPricedCourtsCte(environmentFilter('c'))}
     select b.id, b.slug, b.name, b.city, b.address, b.amenities,
            ba.court_count, ba.min_price_centavos,
            st_distance(b.location, ${point})::float8 as distance_meters,
@@ -271,7 +283,7 @@ export type OwnerProfile = {
 
 export type HomeData = {
   featured: BranchSummary[]
-  cities: { city: string; branchCount: number }[]
+  cities: { slug: string; name: string; branchCount: number }[]
   openNowCount: number
 }
 
@@ -478,18 +490,44 @@ export async function getHomeData(): Promise<HomeData> {
     limit ${FEATURED_LIMIT}
   `)
 
-  // Joins against branch_agg (the same approved+priced rule as `featured`)
-  // rather than a bare `courts` EXISTS/join on `status = 'approved'` — a
-  // branch whose only approved court has no rate band isn't a real bookable
-  // branch, and previously counted toward its city here even though it would
-  // never appear if a user actually clicked through to search that city.
+  // Counts branches the SAME way `/search?city=<slug>` finds them — a radius
+  // search around each city's centroid (see src/lib/geo/cities.ts) at the
+  // same 12,000m radius parseSearchParams uses for a non-default city — NOT
+  // a string `group by b.city`. A prior version grouped on the raw
+  // `branches.city` column, which disagreed with the radius-based `/search`
+  // results by 3-10x (e.g. chip said "Makati (1)" while `/search?city=makati`
+  // actually returned 7 venues): `city` is a free-text column on `branches`,
+  // while `/search` only ever uses `city` to pick a lat/lng centroid for an
+  // `ST_DWithin` search, so a branch just outside the "Makati" string but
+  // within 12km of Makati's centroid (or vice versa) made the two numbers
+  // diverge. `DEFAULT_CITY_SLUG` ("All of Metro Manila") is excluded — it's
+  // a synthetic region-wide entry that never matches a real `branches.city`
+  // string, so it never appeared as its own chip anyway, and its 30,000m
+  // radius is a different number than every other city's 12,000m.
+  //
+  // Built as one query (a `values` table of every named city, joined via
+  // `ST_DWithin`) rather than one round-trip per city — `CITIES` is a fixed,
+  // hardcoded ~9-entry array (not user input), so inlining slug/name/lat/lng
+  // as query parameters via `sql.join` is safe and keeps this to a single
+  // round-trip regardless of how many cities are ever added to that table.
+  const namedCities = CITIES.filter((c) => c.slug !== DEFAULT_CITY_SLUG)
+  const cityValues = sql.join(
+    namedCities.map(
+      (c) => sql`(${c.slug}::text, ${c.name}::text, ${c.lat}::float8, ${c.lng}::float8)`,
+    ),
+    sql`, `,
+  )
+
   const cities = await db.execute(sql`
     ${approvedPricedCourtsCte()}
-    select b.city, count(distinct b.id)::int as branch_count
-    from branches b
+    select v.slug, v.name, count(distinct b.id)::int as branch_count
+    from (values ${cityValues}) as v(slug, name, lat, lng)
+    join branches b
+      on st_dwithin(b.location, st_setsrid(st_makepoint(v.lng, v.lat), 4326)::geography, ${CITY_SEARCH_RADIUS_METERS})
     join branch_agg ba on ba.branch_id = b.id
-    group by b.city
-    order by branch_count desc, b.city
+    where b.location is not null
+    group by v.slug, v.name
+    order by branch_count desc, v.name
   `)
 
   const openNow = await db.execute(sql`
@@ -521,7 +559,8 @@ export async function getHomeData(): Promise<HomeData> {
   return {
     featured: featured.rows.map(toSummary),
     cities: cities.rows.map((row) => ({
-      city: row.city as string,
+      slug: row.slug as string,
+      name: row.name as string,
       branchCount: Number(row.branch_count),
     })),
     openNowCount: Number(openNow.rows[0].open_now),

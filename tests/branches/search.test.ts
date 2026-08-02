@@ -287,6 +287,68 @@ describe('searchBranches', () => {
     expect(slugs).not.toContain(taken.slug)
   })
 
+  /**
+   * Regression test for a third, related bug found in code review: the
+   * hour-availability EXISTS subquery (the `c3` block above) checks every
+   * approved court on the branch for operating-hours/rate-band/booking
+   * availability, but never applies `environmentFilter` the way the
+   * `approved_courts` CTE does. A branch whose only *indoor* court is fully
+   * booked at the requested hour still satisfies this EXISTS check — and
+   * gets returned as an `environment: 'indoor'` result, reporting the
+   * indoor court's count/price via `branch_agg` — as long as some other,
+   * differently-environmented court (here, an unrelated outdoor court) is
+   * free at that hour. The outdoor court's freedom says nothing about
+   * whether the requested indoor court is actually bookable then.
+   */
+  it('excludes a branch whose only matching-environment court is booked at that hour, even if a differently-environmented court is free', async () => {
+    const origin = remoteOrigin()
+
+    const mixed = await seedBranchAt({ ...origin, environment: 'indoor' })
+
+    const outdoorCourt = await db.execute(sql`
+      insert into courts (branch_id, name, environment, status)
+      values (${mixed.branchId}::uuid, 'Outdoor Court', 'outdoor'::court_environment, 'approved')
+      returning id
+    `)
+    const outdoorCourtId = outdoorCourt.rows[0].id as string
+    await db.execute(sql`
+      insert into court_rate_bands (court_id, start_hour, end_hour, price_centavos)
+      values (${outdoorCourtId}::uuid, 7, 23, 30000)
+    `)
+    for (let day = 0; day <= 6; day++) {
+      await db.execute(sql`
+        insert into court_operating_hours (court_id, day_of_week, opens_hour, closes_hour)
+        values (${outdoorCourtId}::uuid, ${day}, 7, 23)
+      `)
+    }
+
+    // Book the INDOOR court (the requested environment) at the target hour,
+    // leaving the outdoor court free at that same hour.
+    const playerId = await seedPlayer()
+    await db.execute(sql`
+      insert into bookings (
+        court_id, branch_id, player_id, starts_at, ends_at, status,
+        court_fee_centavos, transaction_fee_centavos, total_charged_centavos,
+        platform_fee_centavos, processor_fee_centavos, owner_net_centavos,
+        fee_config_snapshot
+      ) values (
+        ${mixed.courtId}::uuid, ${mixed.branchId}::uuid, ${playerId}::uuid,
+        '2026-09-01T18:00:00+08:00'::timestamptz, '2026-09-01T19:00:00+08:00'::timestamptz,
+        'confirmed', 30000, 0, 30000, 3000, 0, 27000, '{}'::jsonb
+      )
+    `)
+
+    const results = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      environment: 'indoor',
+      date: '2026-09-01',
+      hour: 18,
+    })
+    const slugs = results.map((r) => r.slug)
+    expect(slugs).not.toContain(mixed.slug)
+  })
+
   it('returns a null rating and zero count for a branch with no reviews', async () => {
     const origin = remoteOrigin()
     const fixture = await seedBranchAt({ ...origin })

@@ -29,23 +29,21 @@ export default async function HomePage() {
   const { featured, cities, openNowCount } = await getHomeData()
   const today = manilaToday()
 
-  // getHomeData() returns raw DB `city` strings (e.g. "Quezon City");
-  // CITIES holds slugs. Matched by exact name (CITIES' `name` field is
-  // already the same display string the seed writes into `branches.city`,
-  // umlauts/tildes included — e.g. "Parañaque"). A city with no matching
-  // slug is dropped rather than linking to a dead `/search?city=...` — see
-  // task-8-report.md for which of the 9 seeded cities matched (all of them,
-  // as of this run).
+  // getHomeData() already returns one row per named city (slug, name,
+  // branchCount) counted via the same radius search `/search?city=<slug>`
+  // uses, so a chip's count always matches what clicking through to that
+  // city actually shows — no string-matching against `CITIES` needed here
+  // anymore, and a city with zero venues in radius simply has no row.
   const cityLinks = cities
-    .map((row) => {
-      const match = CITIES.find((c) => c.name === row.city)
-      return match ? { slug: match.slug, name: match.name, branchCount: row.branchCount } : null
-    })
-    .filter((c): c is { slug: string; name: string; branchCount: number } => c !== null)
 
-  // Valid start hours for a 1-hour slot: operating hours in the seed run
-  // 7..24 (closes_hour of 24 = midnight), so the latest bookable start hour
-  // is 23.
+  // Generic search-filter hours, not derived from any one branch's actual
+  // operating hours -- the seed (supabase/seed.sql) writes two different
+  // ranges, not a single 7..24: the 9 public-demo branches (27 courts across
+  // Rally Republic, Dink Haus, The Kitchen MNL) open 7 and close 23 every
+  // day (seed.sql:224-226), while the legacy "smash-zone-marikina"
+  // verification branch (3 courts) is the exception, opening 11 and closing
+  // 24/midnight (seed.sql:84-86). This list spans 7..23 to match the common
+  // branches' full range.
   const hourOptions = Array.from({ length: 17 }, (_, i) => i + 7)
 
   return (

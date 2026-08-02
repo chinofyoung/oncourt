@@ -35,6 +35,23 @@ const DEFAULT_CENTER: L.LatLngTuple = [14.6, 121.0]
 const DEFAULT_ZOOM = 12
 
 /**
+ * Minimal HTML-escape for the strings we interpolate into `L.divIcon`'s
+ * `html:` (which Leaflet injects via innerHTML). Today `pin.id` (a Postgres
+ * `uuid`) and `formatPeso(...)`'s output (digits/currency symbol only) never
+ * contain any of these characters — but escaping is applied unconditionally
+ * so this call site stays safe if it's ever extended to interpolate a
+ * free-text field (e.g. `pin.name`, which is owner-supplied).
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/**
  * Toggle the `.active` class on the marker matching `id` (clearing every
  * other marker). Shared by the pins-rebuild effect and the activeId effect
  * so a pins rebuild always re-applies the current hover state instead of
@@ -132,7 +149,7 @@ export function SearchMap(props: {
     for (const pin of pins) {
       const icon = L.divIcon({
         className: 'price-pin-icon',
-        html: `<span class="price-pin" data-pin-id="${pin.id}">${formatPeso(pin.priceCentavos)}</span>`,
+        html: `<span class="price-pin" data-pin-id="${escapeHtml(pin.id)}">${escapeHtml(formatPeso(pin.priceCentavos))}</span>`,
         iconSize: undefined,
       })
       const marker = L.marker([pin.lat, pin.lng], { icon })
