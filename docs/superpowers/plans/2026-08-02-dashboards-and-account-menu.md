@@ -722,6 +722,7 @@ git commit -m "Split login into server page and client button, thread ?next="
 
 **Files:**
 - Create: `src/lib/bookings/queries.ts`
+- Modify: `tests/helpers/fixtures.ts` (add and export `seedBooking`)
 - Test: `tests/bookings/queries.test.ts`
 
 **Interfaces:**
@@ -789,22 +790,27 @@ export async function getPlayerDashboard(playerId: string): Promise<PlayerDashbo
 export async function getBookingReceipt(bookingId: string, playerId: string): Promise<BookingReceipt | null>
 ```
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1a: Add the shared booking fixture**
 
-Create `tests/bookings/queries.test.ts`:
+Both this task's tests and Task 9's need to insert bookings. Add it once, to
+`tests/helpers/fixtures.ts`, next to `seedPlayer`/`seedBranchWithCourts`:
 
 ```ts
-import { afterAll, expect, test } from 'vitest'
-import { sql } from 'drizzle-orm'
-import { db } from '@/db'
-import { seedBranchWithCourts, seedPlayer, teardownFixtures } from '../helpers/fixtures'
-import { getBookingReceipt, getPlayerDashboard } from '@/lib/bookings/queries'
-
-afterAll(teardownFixtures)
-
-// Inserts a booking directly. Hours are chosen per-test to avoid colliding
-// with bookings_no_overlap on the same court.
-async function seedBooking(opts: {
+/**
+ * Inserts a booking directly, bypassing the hold/pricing path — these tests
+ * are about reads, not about how a booking comes to exist.
+ *
+ * No teardown tracking of its own: the caller's court/branch/player all come
+ * from seedPlayer()/seedBranchWithCourts(), and teardownFixtures() already
+ * deletes bookings by tracked player_id and by branches under tracked owners
+ * before deleting the users themselves (bookings' FKs are RESTRICT, so that
+ * ordering is required).
+ *
+ * Callers must choose non-overlapping hours per court: bookings_no_overlap is
+ * an exclusion constraint, and two bookings on one court at one hour raise
+ * 23P01.
+ */
+export async function seedBooking(opts: {
   courtId: string
   branchId: string
   playerId: string
@@ -812,13 +818,14 @@ async function seedBooking(opts: {
   hours?: number
   status?: 'pending_payment' | 'confirmed' | 'completed'
   totalCentavos?: number
-}) {
+}): Promise<string> {
   const hours = opts.hours ?? 1
   const endsAt = new Date(opts.startsAt.getTime() + hours * 3_600_000)
   const status = opts.status ?? 'completed'
   const total = opts.totalCentavos ?? 30000
-  // pending_payment is the only status the CHECK constraint requires an
-  // expires_at for (bookings_hold_has_expiry).
+  const platformFee = Math.round(total * 0.1)
+  // pending_payment is the only status the CHECK constraint
+  // (bookings_hold_has_expiry) requires an expires_at for.
   const expiresAt = status === 'pending_payment' ? new Date(Date.now() + 900_000) : null
 
   const result = await db.execute(sql`
@@ -831,13 +838,27 @@ async function seedBooking(opts: {
       ${opts.courtId}::uuid, ${opts.branchId}::uuid, ${opts.playerId}::uuid,
       ${opts.startsAt.toISOString()}::timestamptz, ${endsAt.toISOString()}::timestamptz,
       ${status}::booking_status, ${expiresAt ? expiresAt.toISOString() : null}::timestamptz,
-      ${total}, 0, ${total}, ${Math.round(total * 0.1)}, 0, ${total - Math.round(total * 0.1)},
+      ${total}, 0, ${total}, ${platformFee}, 0, ${total - platformFee},
       '{"test": true}'::jsonb
     )
     returning id
   `)
   return result.rows[0].id as string
 }
+```
+
+- [ ] **Step 1b: Write the failing tests**
+
+Create `tests/bookings/queries.test.ts`:
+
+```ts
+import { afterAll, expect, test } from 'vitest'
+import { sql } from 'drizzle-orm'
+import { db } from '@/db'
+import { seedBooking, seedBranchWithCourts, seedPlayer, teardownFixtures } from '../helpers/fixtures'
+import { getBookingReceipt, getPlayerDashboard } from '@/lib/bookings/queries'
+
+afterAll(teardownFixtures)
 
 // A fixed past date well clear of the seeded demo bookings (2026-06-01..03)
 // and of "now", so upcoming/past classification is unambiguous.
@@ -1434,12 +1455,18 @@ git commit -m "Add player dashboard at /bookings"
 
 **Files:**
 - Create: `src/app/bookings/actions.ts`
-- Modify: `src/app/bookings/page.tsx` (render the form in the past panel's action cell)
+- Create: `src/app/bookings/review-form.tsx`
+- Modify: `src/app/bookings/page.tsx` (render `<ReviewForm>` in the past panel's action cell)
 - Test: `tests/bookings/review-action.test.ts`
 
 **Interfaces:**
 - Consumes: `requireUser`, `AuthError`, `db`, `revalidatePath`.
-- Produces: `createReviewAction(formData: FormData): Promise<{ error: string } | { ok: true }>` and the exported pure helper `parseReviewInput(formData: FormData): { bookingId: string; rating: number; body: string | null } | null`.
+- Produces:
+  - `type ReviewFormState = { ok: true } | { error: string } | null`
+  - `createReviewAction(prevState: ReviewFormState, formData: FormData): Promise<ReviewFormState>` — the `useActionState` signature, so the form can render the error it returns.
+  - `parseReviewInput(formData: FormData): ReviewInput | null` (exported, pure, tested)
+  - `insertReviewIfEligible(input: ReviewInput & { playerId: string }): Promise<InsertResult>` (exported, tested)
+  - `<ReviewForm bookingId={string} />`
 
 **Why a pure parse helper:** the action itself calls `requireUser()`, which needs a session, so it is not directly unit-testable in a Node test. The eligibility SQL and the parse rules are the parts that can be wrong, so they are extracted and tested — `insertReviewIfEligible` for the SQL, `parseReviewInput` for the input rules.
 
@@ -1639,7 +1666,20 @@ export async function insertReviewIfEligible(input: ReviewInput & { playerId: st
   }
 }
 
-export async function createReviewAction(formData: FormData): Promise<{ error: string } | { ok: true }> {
+export type ReviewFormState = { ok: true } | { error: string } | null
+
+/**
+ * useActionState's signature: (prevState, formData) => nextState. The previous
+ * state is unused — each submission is judged on its own input — but the
+ * parameter must exist for React to bind the action to the form's state.
+ *
+ * Returning state rather than only redirecting is what lets ReviewForm render
+ * "You've already reviewed this booking" instead of appearing to do nothing.
+ */
+export async function createReviewAction(
+  _prevState: ReviewFormState,
+  formData: FormData,
+): Promise<ReviewFormState> {
   let user
   try {
     user = await requireUser()
@@ -1685,13 +1725,95 @@ npx vitest run tests/auth/action-coverage.test.ts
 
 Expected: PASS — `src/app/bookings/actions.ts` contains `requireUser`.
 
-- [ ] **Step 6: Render the form in the past panel**
+- [ ] **Step 6: Create the review form**
 
-In `src/app/bookings/page.tsx`, the past table's action cell renders, when `!booking.hasReview`, a plain form posting to `createReviewAction` — a `select` named `rating` (options 5 down to 1, labelled "5 — Excellent" … "1 — Poor"), an optional `textarea` named `body` with `maxLength={2000}`, a hidden `bookingId`, and a lime submit button. Since the page is a Server Component with no client state, the form cannot show the returned `{ error }` inline; instead the submit path relies on `revalidatePath` and the row re-rendering as reviewed. **Note this limitation in a comment**: surfacing the error text needs a client component with `useActionState`, which is a follow-up, and the failure modes here are all forgeries or double-submits rather than things a normal user hits.
+`src/app/bookings/review-form.tsx` — a client component, so the action's error
+state has somewhere to render. This is the only client boundary on `/bookings`.
 
-When `booking.hasReview` is true, render the reviewed tag instead: lime dot plus "Reviewed".
+```tsx
+'use client'
 
-- [ ] **Step 7: Typecheck, lint, full suite**
+import { useActionState } from 'react'
+import { createReviewAction, type ReviewFormState } from './actions'
+
+/**
+ * The one client component on this page. It exists for a specific reason: a
+ * Server Component cannot render what a Server Action returns, so a failed
+ * submission (already reviewed, not yet completed, forged input) would look
+ * like nothing happening. useActionState gives the returned message a home.
+ *
+ * On success the action calls revalidatePath('/bookings'), so this row
+ * re-renders from the server as reviewed and this form disappears — no local
+ * success state to manage.
+ */
+export function ReviewForm({ bookingId }: { bookingId: string }) {
+  const [state, formAction, pending] = useActionState<ReviewFormState, FormData>(
+    createReviewAction,
+    null,
+  )
+
+  return (
+    <form action={formAction} className="flex flex-col gap-2">
+      <input type="hidden" name="bookingId" value={bookingId} />
+
+      <label className="sr-only" htmlFor={`rating-${bookingId}`}>
+        Rating
+      </label>
+      <select
+        id={`rating-${bookingId}`}
+        name="rating"
+        defaultValue="5"
+        className="h-[var(--btn-h-sm)] rounded-[var(--btn-radius)] border border-[var(--hairline)] bg-[var(--panel)] px-2 text-[13px] text-[var(--ink)]"
+      >
+        <option value="5">5 — Excellent</option>
+        <option value="4">4 — Good</option>
+        <option value="3">3 — Okay</option>
+        <option value="2">2 — Poor</option>
+        <option value="1">1 — Bad</option>
+      </select>
+
+      <label className="sr-only" htmlFor={`body-${bookingId}`}>
+        Review
+      </label>
+      <textarea
+        id={`body-${bookingId}`}
+        name="body"
+        rows={2}
+        maxLength={2000}
+        placeholder="How was the court? (optional)"
+        className="rounded-[var(--btn-radius)] border border-[var(--hairline)] bg-[var(--panel)] px-2.5 py-2 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-soft)]"
+      />
+
+      {/* Lime is this view's one primary action — the page's other buttons are
+          bordered/neutral, so branding.md's "never two lime buttons in one
+          view" holds even with several of these rows on screen, since they are
+          all the same action repeated. */}
+      <button
+        type="submit"
+        disabled={pending}
+        className="font-display inline-flex h-[var(--btn-h-sm)] items-center justify-center rounded-[var(--btn-radius)] bg-[var(--ball)] px-3 text-[13px] font-bold text-[var(--ball-ink)] transition-[filter] duration-150 hover:brightness-[1.06] disabled:opacity-60 motion-reduce:transition-none"
+      >
+        {pending ? 'Saving…' : 'Leave a review'}
+      </button>
+
+      {state && 'error' in state && (
+        <p role="alert" className="text-[12.5px] font-medium text-[var(--ink)]">
+          {state.error}
+        </p>
+      )}
+    </form>
+  )
+}
+```
+
+- [ ] **Step 7: Render it in the past panel**
+
+In `src/app/bookings/page.tsx`, the past table's action cell renders
+`<ReviewForm bookingId={booking.id} />` when `!booking.hasReview`, and when it
+is true, the reviewed tag instead: a lime 7px dot with a 1.5px `--ink` border
+(branding.md's Rating mark) plus the word "Reviewed".
+
+- [ ] **Step 8: Typecheck, lint, full suite**
 
 ```bash
 npx tsc --noEmit && npm run lint && npm test
@@ -1699,10 +1821,10 @@ npx tsc --noEmit && npm run lint && npm test
 
 Expected: all green apart from the pre-existing warnings.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add src/app/bookings/actions.ts src/app/bookings/page.tsx tests/bookings/review-action.test.ts
+git add src/app/bookings/actions.ts src/app/bookings/review-form.tsx src/app/bookings/page.tsx tests/bookings/review-action.test.ts
 git commit -m "Add review creation from the past-bookings tab"
 ```
 
@@ -1908,47 +2030,16 @@ export async function getOwnerBranches(ownerId: string): Promise<{ id: string; n
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `tests/owner/queries.test.ts`. Reuse the `seedBooking` helper shape from Task 5's test file (copy it in — the two files are independent and a shared helper for two callers is not worth a new module).
+Create `tests/owner/queries.test.ts`, importing the shared `seedBooking` added to `tests/helpers/fixtures.ts` in Task 5. Note its default status is `completed`; every owner test below that wants a `confirmed` booking passes `status` explicitly.
 
 ```ts
 import { afterAll, expect, test } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { seedBranchWithCourts, seedPlayer, teardownFixtures } from '../helpers/fixtures'
+import { seedBooking, seedBranchWithCourts, seedPlayer, teardownFixtures } from '../helpers/fixtures'
 import { getOwnerBookings, getOwnerBranches, getOwnerEarnings, getOwnerOverview } from '@/lib/owner/queries'
 
 afterAll(teardownFixtures)
-
-async function seedBooking(opts: {
-  courtId: string
-  branchId: string
-  playerId: string
-  startsAt: Date
-  hours?: number
-  status?: 'pending_payment' | 'confirmed' | 'completed'
-  totalCentavos?: number
-}) {
-  const hours = opts.hours ?? 1
-  const endsAt = new Date(opts.startsAt.getTime() + hours * 3_600_000)
-  const status = opts.status ?? 'confirmed'
-  const total = opts.totalCentavos ?? 30000
-  const platformFee = Math.round(total * 0.1)
-  const expiresAt = status === 'pending_payment' ? new Date(Date.now() + 900_000) : null
-
-  const result = await db.execute(sql`
-    insert into bookings (
-      court_id, branch_id, player_id, starts_at, ends_at, status, expires_at,
-      court_fee_centavos, transaction_fee_centavos, total_charged_centavos,
-      platform_fee_centavos, processor_fee_centavos, owner_net_centavos, fee_config_snapshot
-    ) values (
-      ${opts.courtId}::uuid, ${opts.branchId}::uuid, ${opts.playerId}::uuid,
-      ${opts.startsAt.toISOString()}::timestamptz, ${endsAt.toISOString()}::timestamptz,
-      ${status}::booking_status, ${expiresAt ? expiresAt.toISOString() : null}::timestamptz,
-      ${total}, 0, ${total}, ${platformFee}, 0, ${total - platformFee}, '{"test": true}'::jsonb
-    ) returning id
-  `)
-  return result.rows[0].id as string
-}
 
 /** A Manila-local instant on a given YYYY-MM-DD at a given hour. */
 function manilaAt(date: string, hour: number) {
@@ -2602,6 +2693,21 @@ git commit -m "Record end-to-end verification of the signed-in dashboards"
 
 **Two gaps found and closed while reviewing.** `SessionUser` lacked `fullName` (needed by the menu) and `businessName` (needed by the owner shell); both are now explicit steps in Tasks 3 and 10 rather than discoveries mid-implementation. The spec's file list also omitted `src/lib/auth/next-path.ts` and `src/lib/auth/page-guards.ts`, which this plan adds as Tasks 2 and 1.
 
-**Known limitation, recorded rather than hidden.** The review form cannot display its `{ error }` return, because the page is a Server Component with no `useActionState`. Task 7 Step 6 requires this be noted in a code comment. The failure modes are forgeries and double-submits, not ordinary mistakes, so shipping without inline errors is acceptable — but it is a real gap, not a non-issue.
+**Two pre-flight conflicts, resolved by the human before execution.** The first
+draft of this plan mandated two things a code reviewer would correctly flag as
+defects. Both were raised as a batched question and resolved toward the better
+engineering, and the plan text above now reflects the resolutions:
 
-**No component tests exist for the two client components.** `vitest.config.ts` sets `environment: 'node'` and neither `jsdom` nor `@testing-library/react` is installed. Task 3 says explicitly not to add them here, and Task 13 covers the behavior in a browser instead. Anyone reading this plan should know that the account menu's keyboard behavior is verified by hand, not by a test.
+1. **Duplicated test fixture.** Tasks 5 and 9 both needed a `seedBooking`
+   helper, and the draft said to copy it into each test file. It now lives once
+   in `tests/helpers/fixtures.ts` (Task 5, Step 1a) beside the other seeding
+   helpers, and both test files import it. Note its default status is
+   `completed`, which every current caller wants.
+2. **Discarded action return.** The draft rendered the review form from a Server
+   Component, which cannot display what a Server Action returns — a failed
+   submission would have looked like nothing happening. Task 7 now adds
+   `src/app/bookings/review-form.tsx`, a client component using
+   `useActionState`, and `createReviewAction` takes the `(prevState, formData)`
+   signature. This is the only client boundary on `/bookings`.
+
+**No component tests exist for the three client components** (`AccountMenu`, `SignInButton`, `ReviewForm`). `vitest.config.ts` sets `environment: 'node'` and neither `jsdom` nor `@testing-library/react` is installed. Task 3 says explicitly not to add them here, and Task 13 covers the behavior in a browser instead. Anyone reading this plan should know that the account menu's keyboard behavior and the review form's error rendering are verified by hand, not by a test.
