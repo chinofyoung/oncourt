@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
+import { manilaWeekday } from '@/lib/date-manila'
 import type { RateBand } from '@/lib/booking/pricing'
 
 export type CellState = 'open' | 'booked' | 'closed'
@@ -47,25 +48,6 @@ export function buildAvailabilityGrid(input: GridInput): GridColumn[] {
 
     return { ...court, cells }
   })
-}
-
-/**
- * Day-of-week (0=Sunday..6=Saturday) of the Manila calendar date itself.
- *
- * Deliberately mirrors `manilaWeekday` in `src/lib/booking/hold.ts` rather
- * than importing it (hold.ts does not export it, and this task's file list
- * does not include changes to hold.ts). Duplicated in full so the same bug
- * Task 8 found and fixed is not reintroduced here:
- * `new Date(`${date}T00:00:00+08:00`).getUTCDay()` is off by one, because
- * Manila midnight of `date` is 16:00 UTC on the *previous* calendar day, so
- * `.getUTCDay()` on that instant returns the wrong (earlier) weekday every
- * time. Parsing the date's own y/m/d components into `Date.UTC` treats them
- * as a plain calendar date with no timezone shift, which is what
- * `court_operating_hours.day_of_week` actually means.
- */
-function manilaWeekday(date: string): number {
-  const [year, month, day] = date.split('-').map(Number)
-  return new Date(Date.UTC(year, month - 1, day)).getUTCDay()
 }
 
 /**
@@ -184,10 +166,11 @@ export async function loadBranchDay(
       // Manila hour-of-day for this instant: add the +8h offset to the
       // absolute UTC instant, then read UTC fields off the shifted instant.
       // This is the inverse (and correct) direction of the weekday bug
-      // above — here we start from a real, unambiguous timestamptz and want
-      // the Manila wall-clock hour, so shifting forward before reading UTC
-      // fields is right; it is only wrong when a date string that already
-      // encodes a Manila offset is parsed and then re-read via getUTCDay().
+      // documented in `manilaWeekday` (`src/lib/date-manila.ts`) — here we
+      // start from a real, unambiguous timestamptz and want the Manila
+      // wall-clock hour, so shifting forward before reading UTC fields is
+      // right; it is only wrong when a date string that already encodes a
+      // Manila offset is parsed and then re-read via getUTCDay().
       list.push(new Date(t + 8 * 3_600_000).getUTCHours())
     }
   }

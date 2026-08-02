@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
+import { manilaWeekday } from '@/lib/date-manila'
 import { priceSlots, PricingError, type RateBand } from '@/lib/booking/pricing'
 
 export const MAX_CONCURRENT_HOLDS = 3
@@ -65,35 +66,6 @@ function manilaInstant(date: string, hour: number): string | undefined {
   return Number.isNaN(instant.getTime()) ? undefined : instant.toISOString()
 }
 
-/**
- * Day-of-week (0=Sunday..6=Saturday) of the Manila calendar date itself.
- * Returns `undefined` — rather than propagating a `NaN` — only when
- * `date`'s components don't parse as numbers at all (e.g. `date` has no
- * `-` separators at all, like `'garbage'`). More lenient than
- * `manilaInstant`: `Date.UTC` normalizes *any* numeric month/day overflow
- * into a real, different date instead of producing `NaN` — this returns a
- * real (wrong) weekday rather than `undefined` for both a nonexistent day
- * (`2026-02-30`) and an out-of-range month (`2026-13-01`), verified
- * directly in Node. This asymmetry with `manilaInstant` is harmless here:
- * `createHold`'s guard checks both helpers' results together, and
- * `manilaInstant` already fails outright on `2026-13-01` (a real calendar
- * month is required for its `T..:00:00+08:00` string to parse), so the
- * combined guard still rejects it. Do not rely on `manilaWeekday` alone to
- * validate a `date` string.
- *
- * Deliberately NOT `new Date(`${date}T00:00:00+08:00`).getUTCDay()`: that
- * builds the instant for Manila midnight, which is 16:00 UTC the *previous*
- * calendar day, so `getUTCDay()` on it returns the wrong (earlier) weekday
- * every time. Parsing the date's y/m/d components and handing them to
- * `Date.UTC` treats the calendar date as a plain calendar date with no
- * timezone shift, which is what `court_operating_hours.day_of_week` means.
- */
-function manilaWeekday(date: string): number | undefined {
-  const [year, month, day] = date.split('-').map(Number)
-  const instant = new Date(Date.UTC(year, month - 1, day))
-  return Number.isNaN(instant.getTime()) ? undefined : instant.getUTCDay()
-}
-
 const PG_EXCLUSION_VIOLATION = '23P01'
 const PG_DEADLOCK_DETECTED = '40P01'
 
@@ -122,8 +94,10 @@ export async function createHold(input: CreateHoldInput): Promise<HoldResult> {
   // text, an out-of-range month like 13, an hour outside 0-24 — see
   // `manilaInstant`'s docstring for why 24 itself is valid, not a typo),
   // must come back as `{ ok: false, reason: 'invalid_input' }`, not escape
-  // as an unhandled RangeError. `manilaInstant`/`manilaWeekday` return
-  // `undefined` instead of throwing precisely so this check can be explicit
+  // as an unhandled RangeError. `manilaInstant` returns `undefined` and
+  // `manilaWeekday` returns `NaN` (never `undefined` — it always returns a
+  // `number`) instead of throwing, precisely so this check can be explicit
+  // (`=== undefined` for the two instants, `Number.isNaN` for the weekday)
   // instead of a catch-all that would also risk swallowing an unrelated bug.
   //
   // This guard does NOT catch calendar-sanity problems where every field is
@@ -136,7 +110,7 @@ export async function createHold(input: CreateHoldInput): Promise<HoldResult> {
   const startsAt = manilaInstant(date, startHour)
   const endsAt = manilaInstant(date, endHour)
   const weekday = manilaWeekday(date)
-  if (startsAt === undefined || endsAt === undefined || weekday === undefined) {
+  if (startsAt === undefined || endsAt === undefined || Number.isNaN(weekday)) {
     return { ok: false, reason: 'invalid_input' }
   }
 
