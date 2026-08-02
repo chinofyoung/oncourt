@@ -2,7 +2,7 @@ import 'server-only'
 import { sql, type SQL } from 'drizzle-orm'
 import { db } from '@/db'
 import { manilaWeekday } from '@/lib/date-manila'
-import { CITIES, DEFAULT_CITY_SLUG } from '@/lib/geo/cities'
+import { CITIES, CITY_SEARCH_RADIUS_METERS, DEFAULT_CITY_SLUG } from '@/lib/geo/cities'
 
 export type BranchSummary = {
   id: string
@@ -36,14 +36,6 @@ export type SearchFilters = {
 
 const DEFAULT_RADIUS_METERS = 25_000
 const DEFAULT_LIMIT = 50
-
-/**
- * Mirrors `parseSearchParams`'s radius for a non-default city slug
- * (src/app/search/page.tsx) — `getHomeData`'s city-chip counts must use the
- * exact same radius `/search?city=<slug>` does, or the two numbers disagree
- * again.
- */
-const CITY_SEARCH_RADIUS_METERS = 12_000
 
 /**
  * The shared "approved AND has a priced rate band" business rule, as a `with`

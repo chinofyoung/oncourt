@@ -1,7 +1,8 @@
 import { sql } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import { db } from '@/db'
-import { getBranchDetail, getHomeData, getOwnerProfile } from '@/lib/branches/queries'
+import { getBranchDetail, getHomeData, getOwnerProfile, searchBranches } from '@/lib/branches/queries'
+import { CITIES, CITY_SEARCH_RADIUS_METERS } from '@/lib/geo/cities'
 import { seedPlayer } from '../helpers/fixtures'
 
 async function seedOwnerWithBranches(branchCount: number) {
@@ -151,18 +152,22 @@ describe('getHomeData', () => {
    *
    * `cities` no longer groups by the free-text `branches.city` column at
    * all (see queries.ts's `getHomeData` for why: it disagreed with
-   * `/search?city=<slug>`'s radius-based count by 3-10x) — it's a
-   * radius search against each named city's centroid instead. So this
-   * fixture's `city` column value is irrelevant to which chip it would
-   * count toward; what matters is that it sits at Marikina's exact
-   * centroid (matching `seedOwnerWithBranches`'s fixture coordinates) with
-   * only an unpriced court. The regression is still checked the same way:
-   * capture Marikina's branch_count before, insert the unpriced-only
-   * branch, and confirm the count is unchanged after.
+   * `/search?city=<slug>`'s radius-based count by 3-10x) — it's a radius
+   * search against each named city's centroid instead, using the exact same
+   * `approvedPricedCourtsCte()` join `searchBranches` uses. So rather than
+   * diffing the live, shared `cities` count (which the hosted, persistent
+   * test DB can mutate between two calls via concurrent test runs — a
+   * flakiness class the sibling `search.test.ts` avoids entirely by
+   * searching 800km from Metro Manila), this seeds the unpriced-only branch
+   * at Marikina's exact centroid and calls `searchBranches` directly against
+   * that same centroid/radius, then asserts the fixture's own slug is absent
+   * from the results. That's an exact, per-fixture check immune to
+   * concurrent churn elsewhere in the city, and it still fails if the
+   * "approved AND priced" rule regresses in the query path both `cities` and
+   * `searchBranches` share.
    */
   it('does not count a branch whose only approved court has no rate band', async () => {
-    const before = await getHomeData()
-    const marikinaBefore = before.cities.find((c) => c.slug === 'marikina')?.branchCount ?? 0
+    const marikina = CITIES.find((c) => c.slug === 'marikina')!
 
     const ownerId = await seedPlayer()
     await db.execute(sql`update profiles set role = 'owner' where id = ${ownerId}::uuid`)
@@ -170,7 +175,7 @@ describe('getHomeData', () => {
     const branch = await db.execute(sql`
       insert into branches (owner_id, name, slug, address, city, location)
       values (${ownerId}::uuid, 'Unpriced City Branch', ${slug}, '1 Test St', 'Marikina',
-              st_setsrid(st_makepoint(121.1029, 14.6507), 4326)::geography)
+              st_setsrid(st_makepoint(${marikina.lng}, ${marikina.lat}), 4326)::geography)
       returning id
     `)
     const branchId = branch.rows[0].id as string
@@ -179,8 +184,11 @@ describe('getHomeData', () => {
       values (${branchId}::uuid, 'Unpriced Court', 'indoor', 'approved')
     `)
 
-    const after = await getHomeData()
-    const marikinaAfter = after.cities.find((c) => c.slug === 'marikina')?.branchCount ?? 0
-    expect(marikinaAfter).toBe(marikinaBefore)
+    const results = await searchBranches({
+      lat: marikina.lat,
+      lng: marikina.lng,
+      radiusMeters: CITY_SEARCH_RADIUS_METERS,
+    })
+    expect(results.map((r) => r.slug)).not.toContain(slug)
   })
 })

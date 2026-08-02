@@ -1,6 +1,6 @@
 import { type SearchFilters } from '@/lib/branches/queries'
 import { isValidCalendarDate, manilaToday } from '@/lib/date-manila'
-import { CITIES, DEFAULT_CITY_SLUG, cityBySlug } from '@/lib/geo/cities'
+import { CITIES, CITY_SEARCH_RADIUS_METERS, DEFAULT_CITY_SLUG, cityBySlug } from '@/lib/geo/cities'
 import { AMENITY_SLUGS } from '@/components/ui/amenity-chip'
 
 /**
@@ -86,7 +86,7 @@ export function parseSearchParams(params: Record<string, string | string[] | und
   const filters: SearchFilters = {
     lat: hasCoords ? latRaw : city.lat,
     lng: hasCoords ? lngRaw : city.lng,
-    radiusMeters: hasCoords ? 15_000 : citySlug === DEFAULT_CITY_SLUG ? 30_000 : 12_000,
+    radiusMeters: hasCoords ? 15_000 : citySlug === DEFAULT_CITY_SLUG ? 30_000 : CITY_SEARCH_RADIUS_METERS,
     date,
     hour,
     environment,
