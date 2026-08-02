@@ -95,6 +95,25 @@ export async function teardownFixtures(): Promise<void> {
   if (createdUserIds.length === 0) return
   const ids = createdUserIds.splice(0, createdUserIds.length)
 
+  // Must precede the bookings delete: reviews.booking_id is NO ACTION
+  // (a booking is a financial record), so a surviving review blocks its
+  // booking's deletion with 23503 — which would abort teardown and leak
+  // every row this run created into the shared, persistent database.
+  await db.execute(sql`
+    delete from reviews
+    where player_id = any (${sql.param(ids)}::uuid[])
+       or branch_id in (
+         select id from branches where owner_id = any (${sql.param(ids)}::uuid[])
+       )
+       or booking_id in (
+         select id from bookings
+         where player_id = any (${sql.param(ids)}::uuid[])
+            or branch_id in (
+              select id from branches where owner_id = any (${sql.param(ids)}::uuid[])
+            )
+       )
+  `)
+
   await db.execute(sql`
     delete from bookings
     where player_id = any (${sql.param(ids)}::uuid[])

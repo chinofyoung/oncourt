@@ -28,7 +28,9 @@ vi.mock('@/lib/supabase/server', () => ({
   }),
 }))
 
-const { requireUser, requireAdmin, requireOwnerOf, AuthError } = await import('@/lib/auth/guards')
+const { requireUser, requireAdmin, requireOwnerOf, getOptionalUser, AuthError } = await import(
+  '@/lib/auth/guards'
+)
 
 async function seedUser(role: 'player' | 'owner' | 'admin') {
   const email = `${role}-${crypto.randomUUID()}@example.test`
@@ -71,6 +73,27 @@ test('requireUser throws 401 when the session has a valid claim but no profile r
   claims.value = { sub: crypto.randomUUID(), email: 'ghost@example.test' }
 
   await expect(requireUser()).rejects.toMatchObject({ status: 401 })
+})
+
+test('getOptionalUser resolves to the profile role from the database, not the JWT', async () => {
+  const user = await seedUser('owner')
+  claims.value = { sub: user.id, email: user.email }
+
+  // Same assertion shape as "requireUser returns the profile role from the
+  // database, not the JWT" above — proves getOptionalUser() resolves through
+  // the same loadSessionUser() mapping, not a separate/divergent path.
+  await expect(getOptionalUser()).resolves.toMatchObject({
+    id: user.id,
+    email: user.email,
+    role: 'owner',
+  })
+})
+
+test('getOptionalUser resolves to null, and does not throw, when there is no session', async () => {
+  // Contrast with "requireUser throws 401 when there is no session": the two
+  // functions share loadSessionUser() and only diverge in what they do with a
+  // null result — this proves getOptionalUser()'s half of that divergence.
+  await expect(getOptionalUser()).resolves.toBeNull()
 })
 
 test('requireAdmin throws 403 for a player and resolves for an admin', async () => {

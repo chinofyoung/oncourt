@@ -4,35 +4,11 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createHold, type HoldResult } from '@/lib/booking/hold'
 import { requireUser, AuthError } from '@/lib/auth/guards'
+import { isValidCalendarDate } from '@/lib/date-manila'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const SLUG_RE = /^[a-z0-9-]+$/
-
-/**
- * `DATE_RE` only checks shape (`\d{4}-\d{2}-\d{2}`) — it accepts a
- * shape-valid but calendar-nonexistent date like `2026-02-30`. `hold.ts`'s
- * `manilaInstant`/`manilaWeekday` do NOT catch this either (confirmed in
- * their own docstrings, task-8-report.md fix round 2/3): `Date`/`Date.UTC`
- * silently normalize day/month overflow into a real, *different* date
- * (Feb 30 becomes Mar 2) instead of failing — `hold.ts` explicitly
- * delegates full calendar validation to this Server Action, and it was
- * missing here in the previous round. A forged `2026-02-30` would
- * therefore create a real hold on March 2nd, a day the user never saw.
- *
- * Round-trips the parsed y/m/d through `Date.UTC` and compares the
- * normalized fields back against the input: a real calendar date is
- * unchanged by the round-trip, a nonexistent one is not.
- */
-function isRealCalendarDate(date: string): boolean {
-  const [year, month, day] = date.split('-').map(Number)
-  const parsed = new Date(Date.UTC(year, month - 1, day))
-  return (
-    parsed.getUTCFullYear() === year &&
-    parsed.getUTCMonth() === month - 1 &&
-    parsed.getUTCDate() === day
-  )
-}
 
 type FailureReason = Exclude<HoldResult, { ok: true }>['reason']
 
@@ -102,7 +78,7 @@ export async function createHoldAction(formData: FormData): Promise<{ error: str
   //     must be less than or equal to range upper bound", again
   //     unrecognized by createHold's catch.
   //   - a shape-valid but calendar-nonexistent date (`2026-02-30`):
-  //     `isRealCalendarDate` below catches what `hold.ts`'s own
+  //     `isValidCalendarDate` below catches what `hold.ts`'s own
   //     `manilaInstant`/`manilaWeekday` explicitly do not (see that
   //     function's docstring) — without this, the hold silently lands on
   //     the normalized date (March 2nd) instead of erroring.
@@ -112,7 +88,7 @@ export async function createHoldAction(formData: FormData): Promise<{ error: str
     !UUID_RE.test(courtId) ||
     !UUID_RE.test(branchId) ||
     !DATE_RE.test(date) ||
-    !isRealCalendarDate(date) ||
+    !isValidCalendarDate(date) ||
     !SLUG_RE.test(slug) ||
     !Number.isInteger(startHour) ||
     !Number.isInteger(endHour) ||

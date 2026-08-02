@@ -4,7 +4,7 @@ import { db } from '@/db'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 
 export type Role = 'player' | 'owner' | 'admin'
-export type SessionUser = { id: string; email: string; role: Role }
+export type SessionUser = { id: string; email: string; role: Role; avatarUrl: string | null }
 
 export class AuthError extends Error {
   constructor(readonly status: 401 | 403, message: string) {
@@ -13,22 +13,49 @@ export class AuthError extends Error {
   }
 }
 
-export async function requireUser(): Promise<SessionUser> {
+/**
+ * Resolves the current session down to a `SessionUser`, or `null` if there is
+ * none — either no `sub` claim at all, or a claim with no matching `profiles`
+ * row. `requireUser()` and `getOptionalUser()` both call this single path so
+ * the claims/profile-lookup logic is never duplicated; they only differ in
+ * what they do with a `null` result (throw vs. return it).
+ */
+async function loadSessionUser(): Promise<SessionUser | null> {
   const supabase = await createServerSupabaseClient()
   const { data } = await supabase.auth.getClaims()
 
   const userId = data?.claims?.sub as string | undefined
-  if (!userId) throw new AuthError(401, 'Not signed in')
+  if (!userId) return null
 
   // Role comes from our own table, never from JWT metadata, which is
   // user-editable and therefore unsafe for authorization.
   const result = await db.execute(sql`
-    select id, email, role from profiles where id = ${userId}::uuid
+    select id, email, role, avatar_url from profiles where id = ${userId}::uuid
   `)
   const profile = result.rows[0]
-  if (!profile) throw new AuthError(401, 'No profile for session')
+  if (!profile) return null
 
-  return { id: profile.id as string, email: profile.email as string, role: profile.role as Role }
+  return {
+    id: profile.id as string,
+    email: profile.email as string,
+    role: profile.role as Role,
+    avatarUrl: (profile.avatar_url as string | null) ?? null,
+  }
+}
+
+export async function requireUser(): Promise<SessionUser> {
+  const user = await loadSessionUser()
+  if (!user) throw new AuthError(401, 'Not signed in')
+  return user
+}
+
+/**
+ * The current user, or null when signed out. Unlike requireUser(), this
+ * never throws or redirects — the public pages render for anonymous
+ * visitors, and the nav only needs to know which of two states to draw.
+ */
+export async function getOptionalUser(): Promise<SessionUser | null> {
+  return loadSessionUser()
 }
 
 export async function requireAdmin(): Promise<SessionUser> {
