@@ -28,9 +28,8 @@ vi.mock('@/lib/supabase/server', () => ({
   }),
 }))
 
-const { requireUser, requireAdmin, requireOwnerOf, getOptionalUser, AuthError } = await import(
-  '@/lib/auth/guards'
-)
+const { requireUser, requireAdmin, requireOwner, requireOwnerOf, getOptionalUser, AuthError } =
+  await import('@/lib/auth/guards')
 
 async function seedUser(role: 'player' | 'owner' | 'admin') {
   const email = `${role}-${crypto.randomUUID()}@example.test`
@@ -138,4 +137,28 @@ test('requireOwnerOf rejects a nonexistent branch id with 403, not a database er
   const stranger = await seedUser('owner')
   claims.value = { sub: stranger.id, email: stranger.email }
   await expect(requireOwnerOf(crypto.randomUUID())).rejects.toMatchObject({ status: 403 })
+})
+
+test('requireOwner resolves for an owner, resolves for an admin, and rejects a player', async () => {
+  const owner = await seedUser('owner')
+  claims.value = { sub: owner.id, email: owner.email }
+  await expect(requireOwner()).resolves.toMatchObject({ id: owner.id, role: 'owner' })
+
+  // An admin passes the role gate without owning anything. Admin oversight of
+  // OTHER owners' data lives at /admin/*, not here: the owner queries all
+  // filter on owner_id, so an admin at /dashboard sees only branches they
+  // themselves own.
+  const admin = await seedUser('admin')
+  claims.value = { sub: admin.id, email: admin.email }
+  await expect(requireOwner()).resolves.toMatchObject({ role: 'admin' })
+
+  const player = await seedUser('player')
+  claims.value = { sub: player.id, email: player.email }
+  await expect(requireOwner()).rejects.toMatchObject({ status: 403 })
+})
+
+test('requireOwner throws 401, not 403, when there is no session at all', async () => {
+  // Distinguishes "not signed in" from "signed in but wrong role" — the page
+  // guards branch on exactly this to choose redirect-to-login vs redirect-to-/bookings.
+  await expect(requireOwner()).rejects.toMatchObject({ status: 401 })
 })

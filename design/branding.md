@@ -8,8 +8,9 @@
 
 - **Name:** `oncourt` — double meaning: booked on a court, and actually on the court playing. Always lowercase in the wordmark.
 - **Wordmark:** "oncourt" in display font weight 800, followed by a small lime square (8×8px, 2px radius, `--ball` fill). On light backgrounds add a `1.5px solid var(--ink)` border so the square keeps contrast; on dark/photo backgrounds no border. Same rule at footer size.
-- **Product:** pickleball court booking marketplace, Philippines-first (GCash/Maya culture, Taglish-friendly copy).
-- **Voice:** plain, energetic, player-to-player. Light Taglish accents where natural ("Laro na.", "May court ka?"). Never corporate. Buttons say exactly what they do ("Find open courts", "Book now", "List your court").
+- **Product:** pickleball court booking marketplace, Philippines-first (GCash/Maya culture).
+- **Voice:** plain, energetic, player-to-player. Never corporate. Buttons say exactly what they do ("Find open courts", "Book now", "List your court").
+- **Language: English only.** An earlier version of this doc called for "light Taglish accents where natural" and gave "Laro na." / "May court ka?" as examples; that was reversed by explicit user instruction ("text should always be english"). Philippines-first still shapes *what* the copy talks about — pesos, GCash/Maya, local cities — but not the language it's written in. The strings that carried the old voice were replaced in the built app: the home hero now reads "Game on." (was "Laro na."), the owner CTA "Own a court?" (was "May court ka?"), the empty-state line dropped "mga bossing", and the site metadata description in `src/app/layout.tsx` ends "Game on." Files in `design/mockups/` still contain the old Taglish strings — they predate this change and were not swept; **the built app under `src/` is authoritative** where a mockup disagrees.
 
 ## Color
 

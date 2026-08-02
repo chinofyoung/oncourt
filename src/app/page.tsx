@@ -69,7 +69,7 @@ export default async function HomePage() {
             <h1 className="font-display mt-[18px] mb-[18px] max-w-[900px] text-[68px] leading-none font-bold tracking-[-0.035em] text-white max-[980px]:text-[44px] max-[560px]:text-[38px] max-[560px]:tracking-[-0.03em]">
               Pick a time. Pick a court.
               <br />
-              <span className="text-[var(--ball)]">Laro na.</span>
+              <span className="text-[var(--ball)]">Game on.</span>
             </h1>
             <p className="max-w-[560px] text-[17px] font-normal text-white/75 max-[560px]:text-[15.5px]">
               Every court near you on one live grid — real prices, instant booking, paid with
@@ -209,7 +209,7 @@ export default async function HomePage() {
             </div>
           ) : (
             <p className="rounded-[20px] border border-dashed border-[var(--hairline)] bg-[var(--panel)] px-6 py-12 text-center text-[var(--ink-soft)]">
-              No courts live yet — check back soon, mga bossing. New branches join every week.
+              No courts live yet — check back soon. New branches join every week.
             </p>
           )}
         </section>
@@ -299,7 +299,7 @@ export default async function HomePage() {
               For court owners
             </span>
             <h2 className="font-display max-w-[520px] text-[34px] font-bold tracking-[-0.025em] text-white max-[560px]:text-[26px]">
-              May court ka? Fill your off-peak hours.
+              Own a court? Fill your off-peak hours.
             </h2>
             <p className="mt-3 max-w-[500px] text-[15px] text-[#DCE9DC]/75">
               List every court and branch you run, set your own rates by time of day, and get

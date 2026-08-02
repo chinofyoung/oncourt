@@ -31,7 +31,7 @@ const splineSansMono = Spline_Sans_Mono({
 export const metadata: Metadata = {
   title: `${BRAND_NAME} — book a pickleball court`,
   description:
-    "Find and book pickleball courts across the Philippines. Laro na.",
+    "Find and book pickleball courts across the Philippines. Game on.",
 };
 
 export default function RootLayout({

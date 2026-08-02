@@ -66,5 +66,7 @@ courts across branches, and admins moderate listings. Bookings are paid online
   unavailable — prove idempotency by applying the migration twice). The
   database is **shared and persistent**: no reset between runs, so tests must
   pass on repeated runs and must not mutate seeded singleton rows.
-- Currency is PHP (₱); market is the Philippines. Copy may use light Taglish.
+- Currency is PHP (₱); market is the Philippines. **All user-facing copy is
+  English only** — no Taglish (this reverses an earlier "light Taglish is fine"
+  rule; see the Language entry in `design/branding.md`).
 - Brand name "OnCourt" is a placeholder — keep it easily swappable.
