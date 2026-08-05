@@ -10,7 +10,20 @@ import { expect, test } from 'vitest'
 // the brief's verbatim test logic).
 const glob = (fsPromises as unknown as { glob: (pattern: string) => AsyncIterable<string> }).glob
 
-const GUARDS = ['requireUser', 'requireAdmin', 'requireOwnerOf']
+// Every guard a 'use server' file may satisfy this contract with. Extended in
+// the roles-and-staff slice: `requirePlayer` (paid writes, now that roles are
+// exclusive) and `requireBranchAccess` (per-branch, per-permission writes that
+// staff share with owners). `requireOwner`/`requireOwnerOf` cover owner-only
+// actions; requireOwnerOf is already listed and is what the staff-management
+// actions use.
+const GUARDS = [
+  'requireUser',
+  'requireAdmin',
+  'requireOwnerOf',
+  'requireOwner',
+  'requirePlayer',
+  'requireBranchAccess',
+]
 
 test('every file with "use server" calls an authorization guard', async () => {
   const unguarded: string[] = []

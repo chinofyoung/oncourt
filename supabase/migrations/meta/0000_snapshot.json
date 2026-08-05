@@ -1,0 +1,1568 @@
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "prevId": "",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.profiles": {
+      "name": "profiles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatar_url": {
+          "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "user_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'player'"
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "business_name": {
+          "name": "business_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "business_logo_path": {
+          "name": "business_logo_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "platform_fee_mode": {
+          "name": "platform_fee_mode",
+          "type": "platform_fee_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "platform_fee_value": {
+          "name": "platform_fee_value",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "processor_fee_bearer": {
+          "name": "processor_fee_bearer",
+          "type": "processor_fee_bearer",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "profiles_id_fkey": {
+          "name": "profiles_id_fkey",
+          "tableFrom": "profiles",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "profiles_slug_key": {
+          "columns": [
+            "slug"
+          ],
+          "nullsNotDistinct": false,
+          "name": "profiles_slug_key"
+        }
+      },
+      "checkConstraints": {
+        "profiles_fee_override_pair": {
+          "name": "profiles_fee_override_pair",
+          "value": "((platform_fee_mode IS NULL) AND (platform_fee_value IS NULL)) OR ((platform_fee_mode IS NOT NULL) AND (platform_fee_value IS NOT NULL) AND (platform_fee_value > 0))"
+        }
+      },
+      "policies": {},
+      "isRLSEnabled": true
+    },
+    "public.branches": {
+      "name": "branches",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "city": {
+          "name": "city",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "location": {
+          "name": "location",
+          "type": "geography",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amenities": {
+          "name": "amenities",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"\"}'"
+        },
+        "contact_phone": {
+          "name": "contact_phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_email": {
+          "name": "contact_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "branches_city_idx": {
+          "name": "branches_city_idx",
+          "columns": [
+            {
+              "expression": "city",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "branches_location_gix": {
+          "name": "branches_location_gix",
+          "columns": [
+            {
+              "expression": "location",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "gist_geography_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gist",
+          "with": {}
+        },
+        "branches_owner_id_idx": {
+          "name": "branches_owner_id_idx",
+          "columns": [
+            {
+              "expression": "owner_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "branches_owner_id_fkey": {
+          "name": "branches_owner_id_fkey",
+          "tableFrom": "branches",
+          "tableTo": "profiles",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "branches_slug_key": {
+          "columns": [
+            "slug"
+          ],
+          "nullsNotDistinct": false,
+          "name": "branches_slug_key"
+        }
+      },
+      "checkConstraints": {},
+      "policies": {},
+      "isRLSEnabled": true
+    },
+    "public.courts": {
+      "name": "courts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "environment": {
+          "name": "environment",
+          "type": "court_environment",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "surface": {
+          "name": "surface",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "court_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "rejection_reason": {
+          "name": "rejection_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "courts_branch_approved_idx": {
+          "name": "courts_branch_approved_idx",
+          "columns": [
+            {
+              "expression": "branch_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "where": "(status = 'approved'::court_status)",
+          "with": {}
+        },
+        "courts_branch_id_idx": {
+          "name": "courts_branch_id_idx",
+          "columns": [
+            {
+              "expression": "branch_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "courts_branch_id_fkey": {
+          "name": "courts_branch_id_fkey",
+          "tableFrom": "courts",
+          "tableTo": "branches",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {},
+      "policies": {},
+      "isRLSEnabled": true
+    },
+    "public.branch_photos": {
+      "name": "branch_photos",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "storage_path": {
+          "name": "storage_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "branch_photos_branch_id_idx": {
+          "name": "branch_photos_branch_id_idx",
+          "columns": [
+            {
+              "expression": "branch_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "branch_photos_branch_id_fkey": {
+          "name": "branch_photos_branch_id_fkey",
+          "tableFrom": "branch_photos",
+          "tableTo": "branches",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {},
+      "policies": {},
+      "isRLSEnabled": true
+    },
+    "public.court_photos": {
+      "name": "court_photos",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "court_id": {
+          "name": "court_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "storage_path": {
+          "name": "storage_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "court_photos_court_id_idx": {
+          "name": "court_photos_court_id_idx",
+          "columns": [
+            {
+              "expression": "court_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "court_photos_court_id_fkey": {
+          "name": "court_photos_court_id_fkey",
+          "tableFrom": "court_photos",
+          "tableTo": "courts",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "court_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {},
+      "policies": {},
+      "isRLSEnabled": true
+    },
+    "public.court_rate_bands": {
+      "name": "court_rate_bands",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "court_id": {
+          "name": "court_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_hour": {
+          "name": "start_hour",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_hour": {
+          "name": "end_hour",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_centavos": {
+          "name": "price_centavos",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "court_rate_bands_court_id_idx": {
+          "name": "court_rate_bands_court_id_idx",
+          "columns": [
+            {
+              "expression": "court_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "court_rate_bands_court_id_fkey": {
+          "name": "court_rate_bands_court_id_fkey",
+          "tableFrom": "court_rate_bands",
+          "tableTo": "courts",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "court_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "court_rate_bands_end_hour_check": {
+          "name": "court_rate_bands_end_hour_check",
+          "value": "(end_hour > 0) AND (end_hour <= 24)"
+        },
+        "court_rate_bands_hour_order": {
+          "name": "court_rate_bands_hour_order",
+          "value": "end_hour > start_hour"
+        },
+        "court_rate_bands_price_centavos_check": {
+          "name": "court_rate_bands_price_centavos_check",
+          "value": "price_centavos > 0"
+        },
+        "court_rate_bands_start_hour_check": {
+          "name": "court_rate_bands_start_hour_check",
+          "value": "(start_hour >= 0) AND (start_hour < 24)"
+        }
+      },
+      "policies": {},
+      "isRLSEnabled": true
+    },
+    "public.court_operating_hours": {
+      "name": "court_operating_hours",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "court_id": {
+          "name": "court_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day_of_week": {
+          "name": "day_of_week",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "opens_hour": {
+          "name": "opens_hour",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "closes_hour": {
+          "name": "closes_hour",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "court_operating_hours_court_id_idx": {
+          "name": "court_operating_hours_court_id_idx",
+          "columns": [
+            {
+              "expression": "court_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "court_operating_hours_court_id_fkey": {
+          "name": "court_operating_hours_court_id_fkey",
+          "tableFrom": "court_operating_hours",
+          "tableTo": "courts",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "court_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "court_operating_hours_unique_day": {
+          "columns": [
+            "court_id",
+            "day_of_week"
+          ],
+          "nullsNotDistinct": false,
+          "name": "court_operating_hours_unique_day"
+        }
+      },
+      "checkConstraints": {
+        "court_operating_hours_closes_hour_check": {
+          "name": "court_operating_hours_closes_hour_check",
+          "value": "(closes_hour > 0) AND (closes_hour <= 24)"
+        },
+        "court_operating_hours_day_of_week_check": {
+          "name": "court_operating_hours_day_of_week_check",
+          "value": "(day_of_week >= 0) AND (day_of_week <= 6)"
+        },
+        "court_operating_hours_opens_hour_check": {
+          "name": "court_operating_hours_opens_hour_check",
+          "value": "(opens_hour >= 0) AND (opens_hour < 24)"
+        },
+        "court_operating_hours_order": {
+          "name": "court_operating_hours_order",
+          "value": "closes_hour > opens_hour"
+        }
+      },
+      "policies": {},
+      "isRLSEnabled": true
+    },
+    "public.branch_staff": {
+      "name": "branch_staff",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "view_bookings": {
+          "name": "view_bookings",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "block_slots": {
+          "name": "block_slots",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "manage_courts": {
+          "name": "manage_courts",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "view_earnings": {
+          "name": "view_earnings",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "branch_staff_user_id_idx": {
+          "name": "branch_staff_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "branch_staff_branch_id_fkey": {
+          "name": "branch_staff_branch_id_fkey",
+          "tableFrom": "branch_staff",
+          "tableTo": "branches",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "branch_staff_user_id_fkey": {
+          "name": "branch_staff_user_id_fkey",
+          "tableFrom": "branch_staff",
+          "tableTo": "profiles",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "branch_staff_unique": {
+          "columns": [
+            "branch_id",
+            "user_id"
+          ],
+          "nullsNotDistinct": false,
+          "name": "branch_staff_unique"
+        }
+      },
+      "checkConstraints": {
+        "branch_staff_some_permission": {
+          "name": "branch_staff_some_permission",
+          "value": "view_bookings OR block_slots OR manage_courts OR view_earnings"
+        }
+      },
+      "policies": {},
+      "isRLSEnabled": true
+    },
+    "public.bookings": {
+      "name": "bookings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "court_id": {
+          "name": "court_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ends_at": {
+          "name": "ends_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slot": {
+          "name": "slot",
+          "type": "tstzrange",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "tstzrange(starts_at, ends_at, '[)'::text)",
+            "type": "stored"
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "booking_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending_payment'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "court_fee_centavos": {
+          "name": "court_fee_centavos",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transaction_fee_centavos": {
+          "name": "transaction_fee_centavos",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_charged_centavos": {
+          "name": "total_charged_centavos",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "platform_fee_centavos": {
+          "name": "platform_fee_centavos",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "processor_fee_centavos": {
+          "name": "processor_fee_centavos",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "owner_net_centavos": {
+          "name": "owner_net_centavos",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fee_config_snapshot": {
+          "name": "fee_config_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "bookings_branch_id_idx": {
+          "name": "bookings_branch_id_idx",
+          "columns": [
+            {
+              "expression": "branch_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "bookings_court_id_idx": {
+          "name": "bookings_court_id_idx",
+          "columns": [
+            {
+              "expression": "court_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "bookings_court_starts_at_idx": {
+          "name": "bookings_court_starts_at_idx",
+          "columns": [
+            {
+              "expression": "court_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops",
+              "isExpression": false
+            },
+            {
+              "expression": "starts_at",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "bookings_created_by_idx": {
+          "name": "bookings_created_by_idx",
+          "columns": [
+            {
+              "expression": "created_by",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "bookings_expiring_idx": {
+          "name": "bookings_expiring_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "where": "(status = 'pending_payment'::booking_status)",
+          "with": {}
+        },
+        "bookings_player_id_idx": {
+          "name": "bookings_player_id_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "bookings_branch_id_fkey": {
+          "name": "bookings_branch_id_fkey",
+          "tableFrom": "bookings",
+          "tableTo": "branches",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "bookings_court_id_fkey": {
+          "name": "bookings_court_id_fkey",
+          "tableFrom": "bookings",
+          "tableTo": "courts",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "court_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "bookings_created_by_fkey": {
+          "name": "bookings_created_by_fkey",
+          "tableFrom": "bookings",
+          "tableTo": "profiles",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "bookings_player_id_fkey": {
+          "name": "bookings_player_id_fkey",
+          "tableFrom": "bookings",
+          "tableTo": "profiles",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "bookings_blocked_has_creator": {
+          "name": "bookings_blocked_has_creator",
+          "value": "(status = 'blocked'::booking_status) = (created_by IS NOT NULL)"
+        },
+        "bookings_blocked_is_free": {
+          "name": "bookings_blocked_is_free",
+          "value": "(status <> 'blocked'::booking_status) OR ((court_fee_centavos = 0) AND (transaction_fee_centavos = 0) AND (total_charged_centavos = 0) AND (platform_fee_centavos = 0) AND (processor_fee_centavos = 0) AND (owner_net_centavos = 0))"
+        },
+        "bookings_court_fee_centavos_check": {
+          "name": "bookings_court_fee_centavos_check",
+          "value": "court_fee_centavos >= 0"
+        },
+        "bookings_hold_has_expiry": {
+          "name": "bookings_hold_has_expiry",
+          "value": "(status <> 'pending_payment'::booking_status) OR (expires_at IS NOT NULL)"
+        },
+        "bookings_platform_fee_centavos_check": {
+          "name": "bookings_platform_fee_centavos_check",
+          "value": "platform_fee_centavos >= 0"
+        },
+        "bookings_player_unless_blocked": {
+          "name": "bookings_player_unless_blocked",
+          "value": "(status = 'blocked'::booking_status) OR (player_id IS NOT NULL)"
+        },
+        "bookings_processor_fee_centavos_check": {
+          "name": "bookings_processor_fee_centavos_check",
+          "value": "processor_fee_centavos >= 0"
+        },
+        "bookings_snapshot_unless_blocked": {
+          "name": "bookings_snapshot_unless_blocked",
+          "value": "(status = 'blocked'::booking_status) OR (fee_config_snapshot IS NOT NULL)"
+        },
+        "bookings_time_order": {
+          "name": "bookings_time_order",
+          "value": "ends_at > starts_at"
+        },
+        "bookings_total_charged_centavos_check": {
+          "name": "bookings_total_charged_centavos_check",
+          "value": "total_charged_centavos >= 0"
+        },
+        "bookings_transaction_fee_centavos_check": {
+          "name": "bookings_transaction_fee_centavos_check",
+          "value": "transaction_fee_centavos >= 0"
+        }
+      },
+      "policies": {},
+      "isRLSEnabled": true
+    },
+    "public.platform_settings": {
+      "name": "platform_settings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "boolean",
+          "primaryKey": true,
+          "notNull": true,
+          "default": true
+        },
+        "default_platform_fee_mode": {
+          "name": "default_platform_fee_mode",
+          "type": "platform_fee_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'percentage'"
+        },
+        "default_platform_fee_value": {
+          "name": "default_platform_fee_value",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1000
+        },
+        "default_processor_fee_bearer": {
+          "name": "default_processor_fee_bearer",
+          "type": "processor_fee_bearer",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'platform'"
+        },
+        "hold_duration_minutes": {
+          "name": "hold_duration_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 15
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "platform_settings_fee_value_positive": {
+          "name": "platform_settings_fee_value_positive",
+          "value": "default_platform_fee_value > 0"
+        },
+        "platform_settings_hold_positive": {
+          "name": "platform_settings_hold_positive",
+          "value": "hold_duration_minutes > 0"
+        },
+        "platform_settings_singleton": {
+          "name": "platform_settings_singleton",
+          "value": "CHECK (id)"
+        }
+      },
+      "policies": {},
+      "isRLSEnabled": true
+    },
+    "public.processor_rates": {
+      "name": "processor_rates",
+      "schema": "",
+      "columns": {
+        "payment_method": {
+          "name": "payment_method",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "percentage_bps": {
+          "name": "percentage_bps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fixed_fee_centavos": {
+          "name": "fixed_fee_centavos",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "processor_rates_fixed_fee_centavos_check": {
+          "name": "processor_rates_fixed_fee_centavos_check",
+          "value": "fixed_fee_centavos >= 0"
+        },
+        "processor_rates_percentage_bps_check": {
+          "name": "processor_rates_percentage_bps_check",
+          "value": "percentage_bps >= 0"
+        }
+      },
+      "policies": {},
+      "isRLSEnabled": true
+    },
+    "public.reviews": {
+      "name": "reviews",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "booking_id": {
+          "name": "booking_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "player_id": {
+          "name": "player_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rating": {
+          "name": "rating",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "reviews_branch_id_idx": {
+          "name": "reviews_branch_id_idx",
+          "columns": [
+            {
+              "expression": "branch_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reviews_player_id_idx": {
+          "name": "reviews_player_id_idx",
+          "columns": [
+            {
+              "expression": "player_id",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "uuid_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reviews_booking_id_fkey": {
+          "name": "reviews_booking_id_fkey",
+          "tableFrom": "reviews",
+          "tableTo": "bookings",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "booking_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "reviews_branch_id_fkey": {
+          "name": "reviews_branch_id_fkey",
+          "tableFrom": "reviews",
+          "tableTo": "branches",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "reviews_player_id_fkey": {
+          "name": "reviews_player_id_fkey",
+          "tableFrom": "reviews",
+          "tableTo": "profiles",
+          "schemaTo": "public",
+          "columnsFrom": [
+            "player_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "reviews_booking_id_key": {
+          "columns": [
+            "booking_id"
+          ],
+          "nullsNotDistinct": false,
+          "name": "reviews_booking_id_key"
+        }
+      },
+      "checkConstraints": {
+        "reviews_rating_check": {
+          "name": "reviews_rating_check",
+          "value": "(rating >= 1) AND (rating <= 5)"
+        }
+      },
+      "policies": {},
+      "isRLSEnabled": true
+    }
+  },
+  "enums": {
+    "public.booking_status": {
+      "name": "booking_status",
+      "values": [
+        "pending_payment",
+        "confirmed",
+        "completed",
+        "expired",
+        "refunded_manual",
+        "blocked"
+      ],
+      "schema": "public"
+    },
+    "public.court_environment": {
+      "name": "court_environment",
+      "values": [
+        "indoor",
+        "outdoor"
+      ],
+      "schema": "public"
+    },
+    "public.court_status": {
+      "name": "court_status",
+      "values": [
+        "pending",
+        "approved",
+        "rejected",
+        "suspended"
+      ],
+      "schema": "public"
+    },
+    "public.payout_status": {
+      "name": "payout_status",
+      "values": [
+        "pending",
+        "paid"
+      ],
+      "schema": "public"
+    },
+    "public.platform_fee_mode": {
+      "name": "platform_fee_mode",
+      "values": [
+        "percentage",
+        "flat"
+      ],
+      "schema": "public"
+    },
+    "public.processor_fee_bearer": {
+      "name": "processor_fee_bearer",
+      "values": [
+        "player",
+        "owner",
+        "platform"
+      ],
+      "schema": "public"
+    },
+    "public.user_role": {
+      "name": "user_role",
+      "values": [
+        "player",
+        "owner",
+        "admin"
+      ],
+      "schema": "public"
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "tables": {
+      "branches": {
+        "columns": {
+          "amenities": {
+            "isArray": true,
+            "dimensions": 1,
+            "rawType": "text"
+          }
+        }
+      }
+    }
+  }
+}

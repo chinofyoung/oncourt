@@ -28,8 +28,16 @@ vi.mock('@/lib/supabase/server', () => ({
   }),
 }))
 
-const { requireUser, requireAdmin, requireOwner, requireOwnerOf, getOptionalUser, AuthError } =
-  await import('@/lib/auth/guards')
+const {
+  requireUser,
+  requireAdmin,
+  requireOwner,
+  requireOwnerOf,
+  requirePlayer,
+  requireBranchAccess,
+  getOptionalUser,
+  AuthError,
+} = await import('@/lib/auth/guards')
 
 async function seedUser(role: 'player' | 'owner' | 'admin') {
   const email = `${role}-${crypto.randomUUID()}@example.test`
@@ -43,6 +51,32 @@ async function seedUser(role: 'player' | 'owner' | 'admin') {
   createdUserIds.push(id)
   await db.execute(sql`update profiles set role = ${role}::user_role where id = ${id}::uuid`)
   return { id, email }
+}
+
+async function seedBranchFor(ownerId: string) {
+  const branch = await db.execute(sql`
+    insert into branches (owner_id, name, slug, address, city)
+    values (${ownerId}::uuid, 'Guard Branch', ${'guard-' + crypto.randomUUID()},
+            '1 Test St', 'Marikina')
+    returning id
+  `)
+  return branch.rows[0].id as string
+}
+
+async function grant(
+  branchId: string,
+  userId: string,
+  flags: Partial<Record<'view_bookings' | 'block_slots' | 'manage_courts' | 'view_earnings', boolean>>,
+) {
+  await db.execute(sql`
+    insert into branch_staff (
+      branch_id, user_id, view_bookings, block_slots, manage_courts, view_earnings
+    ) values (
+      ${branchId}::uuid, ${userId}::uuid,
+      ${flags.view_bookings ?? false}, ${flags.block_slots ?? false},
+      ${flags.manage_courts ?? false}, ${flags.view_earnings ?? false}
+    )
+  `)
 }
 
 beforeEach(() => { claims.value = null })
@@ -161,4 +195,124 @@ test('requireOwner throws 401, not 403, when there is no session at all', async 
   // Distinguishes "not signed in" from "signed in but wrong role" — the page
   // guards branch on exactly this to choose redirect-to-login vs redirect-to-/bookings.
   await expect(requireOwner()).rejects.toMatchObject({ status: 401 })
+})
+
+test('requirePlayer resolves for a player and rejects both owner and admin', async () => {
+  // Roles are exclusive now. An owner account is a business account: it can
+  // never hold a paid booking anywhere, including on someone else's courts.
+  const player = await seedUser('player')
+  claims.value = { sub: player.id, email: player.email }
+  await expect(requirePlayer()).resolves.toMatchObject({ id: player.id, role: 'player' })
+
+  const owner = await seedUser('owner')
+  claims.value = { sub: owner.id, email: owner.email }
+  await expect(requirePlayer()).rejects.toMatchObject({ status: 403 })
+
+  // Admins do not book either — moderation is not a shopping account.
+  const admin = await seedUser('admin')
+  claims.value = { sub: admin.id, email: admin.email }
+  await expect(requirePlayer()).rejects.toMatchObject({ status: 403 })
+})
+
+test('requirePlayer throws 401, not 403, when there is no session at all', async () => {
+  // requirePlayerPage branches on exactly this to choose redirect-to-login
+  // over redirect-to-/dashboard.
+  await expect(requirePlayer()).rejects.toMatchObject({ status: 401 })
+})
+
+test('requireBranchAccess lets the branch owner through for every permission', async () => {
+  const owner = await seedUser('owner')
+  const branchId = await seedBranchFor(owner.id)
+  claims.value = { sub: owner.id, email: owner.email }
+
+  for (const permission of ['view_bookings', 'block_slots', 'manage_courts', 'view_earnings'] as const) {
+    await expect(requireBranchAccess(branchId, permission)).resolves.toMatchObject({
+      id: owner.id,
+    })
+  }
+})
+
+test('requireBranchAccess lets an admin through without any grant or ownership', async () => {
+  const owner = await seedUser('owner')
+  const branchId = await seedBranchFor(owner.id)
+
+  const admin = await seedUser('admin')
+  claims.value = { sub: admin.id, email: admin.email }
+  await expect(requireBranchAccess(branchId, 'block_slots')).resolves.toMatchObject({
+    role: 'admin',
+  })
+})
+
+test('requireBranchAccess admits staff only for the flags they actually hold', async () => {
+  const owner = await seedUser('owner')
+  const branchId = await seedBranchFor(owner.id)
+  const staff = await seedUser('player')
+  await grant(branchId, staff.id, { view_bookings: true, block_slots: true })
+
+  claims.value = { sub: staff.id, email: staff.email }
+  await expect(requireBranchAccess(branchId, 'view_bookings')).resolves.toMatchObject({
+    id: staff.id,
+    role: 'player',
+  })
+  await expect(requireBranchAccess(branchId, 'block_slots')).resolves.toMatchObject({
+    id: staff.id,
+  })
+  // Granted on this branch, but not these two flags.
+  await expect(requireBranchAccess(branchId, 'manage_courts')).rejects.toMatchObject({
+    status: 403,
+  })
+  await expect(requireBranchAccess(branchId, 'view_earnings')).rejects.toMatchObject({
+    status: 403,
+  })
+})
+
+test('requireBranchAccess rejects staff on a branch they were not granted', async () => {
+  // The scope is the grant's branch, not "any branch of an owner who granted
+  // me something" — a front-desk person at one location must not see another.
+  const owner = await seedUser('owner')
+  const granted = await seedBranchFor(owner.id)
+  const otherBranch = await seedBranchFor(owner.id)
+  const staff = await seedUser('player')
+  await grant(granted, staff.id, { view_bookings: true })
+
+  claims.value = { sub: staff.id, email: staff.email }
+  await expect(requireBranchAccess(granted, 'view_bookings')).resolves.toMatchObject({
+    id: staff.id,
+  })
+  await expect(requireBranchAccess(otherBranch, 'view_bookings')).rejects.toMatchObject({
+    status: 403,
+  })
+})
+
+test('requireBranchAccess rejects a plain player and a different owner', async () => {
+  const owner = await seedUser('owner')
+  const branchId = await seedBranchFor(owner.id)
+
+  const player = await seedUser('player')
+  claims.value = { sub: player.id, email: player.email }
+  await expect(requireBranchAccess(branchId, 'view_bookings')).rejects.toMatchObject({
+    status: 403,
+  })
+
+  // Being an owner of SOMETHING is not access to someone else's branch.
+  const otherOwner = await seedUser('owner')
+  await seedBranchFor(otherOwner.id)
+  claims.value = { sub: otherOwner.id, email: otherOwner.email }
+  await expect(requireBranchAccess(branchId, 'view_bookings')).rejects.toMatchObject({
+    status: 403,
+  })
+})
+
+test('requireBranchAccess rejects a nonexistent branch id with 403, not a database error', async () => {
+  const staff = await seedUser('player')
+  claims.value = { sub: staff.id, email: staff.email }
+  await expect(requireBranchAccess(crypto.randomUUID(), 'block_slots')).rejects.toMatchObject({
+    status: 403,
+  })
+})
+
+test('requireBranchAccess throws 401, not 403, when there is no session at all', async () => {
+  await expect(requireBranchAccess(crypto.randomUUID(), 'view_bookings')).rejects.toMatchObject({
+    status: 401,
+  })
 })

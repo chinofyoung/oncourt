@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Wordmark } from '@/components/site/wordmark'
+import { AccountMenu } from '@/components/site/account-menu'
 import { getOptionalUser } from '@/lib/auth/guards'
 
 /**
@@ -14,9 +15,7 @@ import { getOptionalUser } from '@/lib/auth/guards'
  * supabase.auth.getClaims() — never getSession() — through the same shared
  * path requireUser() uses (see src/lib/auth/guards.ts).
  *
- * NOTE: the signed-in branch is UNVERIFIED. Google OAuth is not yet
- * configured on the Supabase project (docs/foundation-review-notes.md, open
- * item 2), so only the signed-out rendering has been seen in a browser.
+ * The signed-in branch renders the AccountMenu (src/components/site/account-menu.tsx).
  */
 export async function Nav({ variant = 'solid' }: { variant?: 'overlay' | 'solid' }) {
   const user = await getOptionalUser()
@@ -57,26 +56,15 @@ export async function Nav({ variant = 'solid' }: { variant?: 'overlay' | 'solid'
             List your court
           </Link>
           {user ? (
-            // UNVERIFIED (no Google OAuth configured yet, see docstring above):
-            // a null avatarUrl (no photo on the OAuth profile, or a
-            // not-yet-synced profile row) falls back to an initial-letter
-            // badge rather than an <img src=""> — which the browser would
-            // request as the current page URL and, if that response were
-            // ever image-like, could render as a broken/garbage icon.
-            user.avatarUrl ? (
-              <img
-                src={user.avatarUrl}
-                alt=""
-                className="h-9 w-9 rounded-full border border-[var(--hairline)] object-cover"
-              />
-            ) : (
-              <span
-                aria-hidden
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--hairline)] bg-[var(--court)] text-xs font-semibold text-white"
-              >
-                {user.email.charAt(0).toUpperCase()}
-              </span>
-            )
+            <AccountMenu
+              user={{
+                email: user.email,
+                fullName: user.fullName ?? null,
+                avatarUrl: user.avatarUrl,
+                role: user.role,
+              }}
+              onDark={onDark}
+            />
           ) : (
             <Link
               href="/login"

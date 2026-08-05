@@ -30,9 +30,24 @@ export async function seedPlayer(): Promise<string> {
   return id
 }
 
+/**
+ * A player promoted to owner. Extracted because three call sites had this
+ * exact two-step inline (tests/owner/queries.test.ts,
+ * tests/branches/search.test.ts's seedBranchAt, and seedBranchWithCourts
+ * below), and because the roles-and-staff slice adds more.
+ *
+ * Sets ONLY the role. business_name/slug stay null: the real promotion path
+ * (promoteToOwner in src/lib/staff/write.ts) sets those, and a fixture that
+ * silently filled them in would hide a query that depends on them.
+ */
+export async function seedOwner(): Promise<string> {
+  const id = await seedPlayer()
+  await db.execute(sql`update profiles set role = 'owner' where id = ${id}::uuid`)
+  return id
+}
+
 export async function seedBranchWithCourts(courtCount = 2) {
-  const ownerId = await seedPlayer()
-  await db.execute(sql`update profiles set role = 'owner' where id = ${ownerId}::uuid`)
+  const ownerId = await seedOwner()
 
   const slug = 'fixture-' + crypto.randomUUID()
   const branch = await db.execute(sql`
@@ -108,15 +123,24 @@ export async function teardownFixtures(): Promise<void> {
        or booking_id in (
          select id from bookings
          where player_id = any (${sql.param(ids)}::uuid[])
+            or created_by = any (${sql.param(ids)}::uuid[])
             or branch_id in (
               select id from branches where owner_id = any (${sql.param(ids)}::uuid[])
             )
        )
   `)
 
+  // `created_by` is in this predicate for a hard reason, not for tidiness:
+  // bookings.created_by carries no `on delete` clause, so it is RESTRICT. A
+  // `blocked` row created by a tracked user has a NULL player_id and may sit
+  // under a branch this run did not create, so neither of the other two
+  // clauses reaches it — and the `delete from auth.users` below would then
+  // raise 23503, aborting teardown and leaking the whole run's rows into this
+  // shared, persistent database.
   await db.execute(sql`
     delete from bookings
     where player_id = any (${sql.param(ids)}::uuid[])
+       or created_by = any (${sql.param(ids)}::uuid[])
        or branch_id in (
          select id from branches where owner_id = any (${sql.param(ids)}::uuid[])
        )
@@ -130,4 +154,139 @@ export async function teardownFixtures(): Promise<void> {
 /** Manila is UTC+8 with no DST, so a fixed offset is correct and stable. */
 export function manilaHour(date: string, hour: number): Date {
   return new Date(`${date}T${String(hour).padStart(2, '0')}:00:00+08:00`)
+}
+
+/**
+ * Inserts a booking directly, bypassing the hold/pricing path — these tests
+ * are about reads, not about how a booking comes to exist.
+ *
+ * No teardown tracking of its own: the caller's court/branch/player all come
+ * from seedPlayer()/seedBranchWithCourts(), and teardownFixtures() already
+ * deletes bookings by tracked player_id and by branches under tracked owners
+ * before deleting the users themselves (bookings' FKs are RESTRICT, so that
+ * ordering is required).
+ *
+ * Callers must choose non-overlapping hours per court: bookings_no_overlap is
+ * an exclusion constraint, and two bookings on one court at one hour raise
+ * 23P01.
+ */
+export async function seedBooking(opts: {
+  courtId: string
+  branchId: string
+  playerId: string
+  startsAt: Date
+  hours?: number
+  status?: 'pending_payment' | 'confirmed' | 'completed'
+  totalCentavos?: number
+}): Promise<string> {
+  const hours = opts.hours ?? 1
+  const endsAt = new Date(opts.startsAt.getTime() + hours * 3_600_000)
+  const status = opts.status ?? 'completed'
+  const total = opts.totalCentavos ?? 30000
+  const platformFee = Math.round(total * 0.1)
+  // pending_payment is the only status the CHECK constraint
+  // (bookings_hold_has_expiry) requires an expires_at for.
+  const expiresAt = status === 'pending_payment' ? new Date(Date.now() + 900_000) : null
+
+  const result = await db.execute(sql`
+    insert into bookings (
+      court_id, branch_id, player_id, starts_at, ends_at, status, expires_at,
+      court_fee_centavos, transaction_fee_centavos, total_charged_centavos,
+      platform_fee_centavos, processor_fee_centavos, owner_net_centavos,
+      fee_config_snapshot
+    ) values (
+      ${opts.courtId}::uuid, ${opts.branchId}::uuid, ${opts.playerId}::uuid,
+      ${opts.startsAt.toISOString()}::timestamptz, ${endsAt.toISOString()}::timestamptz,
+      ${status}::booking_status, ${expiresAt ? expiresAt.toISOString() : null}::timestamptz,
+      ${total}, 0, ${total}, ${platformFee}, 0, ${total - platformFee},
+      '{"test": true}'::jsonb
+    )
+    returning id
+  `)
+  return result.rows[0].id as string
+}
+
+/**
+ * Inserts a `blocked` booking — an owner/staff block or walk-in.
+ *
+ * Separate from seedBooking() rather than a widened `status` option because
+ * the column shape genuinely differs, and the database now enforces every
+ * difference: player_id must be null (bookings_player_unless_blocked),
+ * created_by must be set (bookings_blocked_has_creator), fee_config_snapshot
+ * must be null (bookings_snapshot_unless_blocked), and every money column must
+ * be 0 (bookings_blocked_is_free). A single helper covering both would make
+ * `playerId` optional for every existing seedBooking() caller.
+ *
+ * `createdBy` is any profile id — there is no DB constraint tying it to the
+ * branch's owner or staff. That rule lives in the server action
+ * (requireBranchAccess), which is why these tests can and do pass an owner id
+ * directly.
+ *
+ * No teardown tracking of its own: teardownFixtures() deletes bookings by
+ * tracked player_id, by branches under tracked owners, AND by tracked
+ * created_by (added in Step 3) — the last of which is required, because
+ * bookings.created_by is RESTRICT and a surviving block would otherwise abort
+ * the auth.users delete with 23503.
+ *
+ * Callers must choose non-overlapping hours per court: bookings_no_overlap now
+ * includes 'blocked' in its predicate, so a block over a booking (or another
+ * block) on one court raises 23P01.
+ */
+export async function seedBlock(opts: {
+  courtId: string
+  branchId: string
+  createdBy: string
+  startsAt: Date
+  hours?: number
+  note?: string | null
+}): Promise<string> {
+  const hours = opts.hours ?? 1
+  const endsAt = new Date(opts.startsAt.getTime() + hours * 3_600_000)
+
+  const result = await db.execute(sql`
+    insert into bookings (
+      court_id, branch_id, player_id, starts_at, ends_at, status, created_by, note,
+      court_fee_centavos, transaction_fee_centavos, total_charged_centavos,
+      platform_fee_centavos, processor_fee_centavos, owner_net_centavos,
+      fee_config_snapshot
+    ) values (
+      ${opts.courtId}::uuid, ${opts.branchId}::uuid, null,
+      ${opts.startsAt.toISOString()}::timestamptz, ${endsAt.toISOString()}::timestamptz,
+      'blocked'::booking_status, ${opts.createdBy}::uuid, ${opts.note ?? null},
+      0, 0, 0, 0, 0, 0, null::jsonb
+    )
+    returning id
+  `)
+  return result.rows[0].id as string
+}
+
+/**
+ * A branch_staff grant. At least one permission must be true — the
+ * branch_staff_some_permission CHECK rejects an all-false row — so callers
+ * always pass at least one flag. Defaults are all false so a caller states
+ * exactly the permissions the test is about, which is what makes the
+ * requireBranchAccess matrix tests readable.
+ *
+ * No teardown tracking: branch_staff.branch_id and .user_id both CASCADE, so
+ * deleting the tracked auth.users rows reclaims these for free.
+ */
+export async function seedStaffGrant(opts: {
+  branchId: string
+  userId: string
+  viewBookings?: boolean
+  blockSlots?: boolean
+  manageCourts?: boolean
+  viewEarnings?: boolean
+}): Promise<string> {
+  const result = await db.execute(sql`
+    insert into branch_staff (
+      branch_id, user_id, view_bookings, block_slots, manage_courts, view_earnings
+    ) values (
+      ${opts.branchId}::uuid, ${opts.userId}::uuid,
+      ${opts.viewBookings ?? false}, ${opts.blockSlots ?? false},
+      ${opts.manageCourts ?? false}, ${opts.viewEarnings ?? false}
+    )
+    returning id
+  `)
+  return result.rows[0].id as string
 }

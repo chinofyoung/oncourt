@@ -35,7 +35,7 @@ A responsive web app where players find and book pickleball courts near them, co
 | Admin | Env-var email allowlist, applied at sign-in | Approval queue, user/booking oversight, refund recording, payout ledger |
 
 - **Auth:** Supabase Auth with Google as the only provider. No passwords, no signup forms. Name, email, and avatar come from the Google profile. Owners are prompted for a phone number when creating their first listing.
-- Owners are also players — they can book other owners' courts with the same account.
+- Roles are **exclusive**: a user is a player or a court owner, never both. Owners cannot book courts anywhere — their only slot writes are unpaid blocks/walk-ins on their own courts. Owners may grant players **branch-scoped staff access** with per-staff permissions. (Amended 2026-08-05; see `2026-08-05-roles-and-staff-design.md`.)
 - A trigger on `auth.users` insert creates the matching `profiles` row with `role = 'player'`. The auth callback route checks the admin email allowlist (`ADMIN_EMAILS` env var) and promotes to `admin` on sign-in.
 - Role is **not** stamped into the JWT. A custom access-token hook is deliberately deferred — all data access is server-side, so authorization decisions read `profiles.role` directly. Add the hook later only if RLS policy performance ever becomes a concern.
 
@@ -85,7 +85,7 @@ Policies get written only if a client-direct feature is ever added. The deferred
 
 **Do not build `SET LOCAL role` / `request.jwt.claims` machinery** to make RLS apply to our own queries. That is for large teams on multi-tenant SaaS where one missed check leaks another tenant. With a handful of Server Actions, the helper set above plus its coverage test is more testable and far less machinery.
 
-**Application database role.** Drizzle connects over a direct Postgres connection as a database role, so it carries no JWT and RLS does not constrain it. Least privilege still applies at the *grant* level: the app role should hold only the DML it needs (no DDL, no `DELETE` on `bookings` or `payments` — expiry is a status flip, and payment records are an audit trail). **Open item for implementation:** creating a dedicated role with `bypassrls` requires superuser, which hosted Supabase does not give you. Verify whether a least-privilege role is achievable on the hosted project; if not, document the fallback of connecting as `postgres` (the table owner, which bypasses RLS as long as we never force it) and keep the scoped-grants goal for later.
+**Application database role.** Drizzle connects over a direct Postgres connection as a database role, so it carries no JWT and RLS does not constrain it. Least privilege still applies at the *grant* level: the app role should hold only the DML it needs (no DDL, no `DELETE` on `bookings` or `payments` — expiry is a status flip, and payment records are an audit trail (carve-out added 2026-08-05: `blocked` rows are deletable — removing a block frees the slot and carries no audit weight)). **Open item for implementation:** creating a dedicated role with `bypassrls` requires superuser, which hosted Supabase does not give you. Verify whether a least-privilege role is achievable on the hosted project; if not, document the fallback of connecting as `postgres` (the table owner, which bypasses RLS as long as we never force it) and keep the scoped-grants goal for later.
 
 Secrets (service role key, PayMongo keys, Resend key, database URL) exist only in server environment variables.
 
@@ -125,7 +125,7 @@ Hierarchy: **Owner (profile) → Branches → Courts**. An owner may have many b
     EXCLUDE USING gist (court_id WITH =, int4range(start_hour, end_hour) WITH &&);
   ```
 - **court_operating_hours** — court_id, day_of_week (0–6), opens_hour, closes_hour, unique on (court_id, day_of_week).
-- **bookings** — court_id, branch_id (denormalized), player_id → profiles, `starts_at`, `ends_at`, generated `slot tstzrange`, `status booking_status` (`pending_payment | confirmed | completed | expired | refunded_manual`), `expires_at?` (set only while `pending_payment`), and the money columns: court_fee_centavos, transaction_fee_centavos, total_charged_centavos, platform_fee_centavos, processor_fee_centavos, owner_net_centavos, `fee_config_snapshot jsonb`.
+- **bookings** — court_id, branch_id (denormalized), player_id → profiles, `starts_at`, `ends_at`, generated `slot tstzrange`, `status booking_status` (`pending_payment | confirmed | completed | expired | refunded_manual | blocked` — `blocked` is an owner/staff slot block or walk-in: no player, no money, occupies the slot; added 2026-08-05), `expires_at?` (set only while `pending_payment`), and the money columns: court_fee_centavos, transaction_fee_centavos, total_charged_centavos, platform_fee_centavos, processor_fee_centavos, owner_net_centavos, `fee_config_snapshot jsonb`.
 - **platform_settings** — singleton (`id boolean PRIMARY KEY DEFAULT true CHECK (id)`): default_platform_fee_mode, default_platform_fee_value, default_processor_fee_bearer, hold_duration_minutes.
 - **processor_rates** — payment_method (PK), percentage_bps, fixed_fee_centavos, updated_at. Admin-editable so processor rate changes need no deploy.
 - **payments** — booking_id, provider (`paymongo`), `provider_ref` (**unique** — this is what makes webhook replays idempotent at the database level), amount_centavos, `status text` (deliberately not an enum: it mirrors provider-specific states, which differ per provider and change without our involvement), `raw_payload jsonb` (audit trail).
@@ -161,7 +161,7 @@ Hierarchy: **Owner (profile) → Branches → Courts**. An owner may have many b
 1. Sign in with Google → "List your court" → create first branch (address with map-pin placement, photos, amenities) → add courts under it (rate bands, indoor/outdoor, hours, photos) → submit. The rate-band editor validates full coverage of operating hours with no overlaps.
 2. Each court enters `pending`. Admin approves or rejects with a reason (owner notified by email).
 3. Editing a court's key fields (rate bands, hours, environment) re-queues only that court to `pending`; other courts and branches are unaffected. Non-key edits (photos, description) do not re-queue.
-4. Owners can add branches and courts anytime; owner role is granted on first submission.
+4. Owners can add branches and courts anytime. Owner accounts are **vetted**: an admin promotes a player account to owner (self-serve promotion on first submission was removed 2026-08-05; see `2026-08-05-roles-and-staff-design.md`).
 
 ### Search
 

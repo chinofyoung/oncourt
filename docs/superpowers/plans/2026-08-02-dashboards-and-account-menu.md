@@ -265,13 +265,24 @@ export function safeNextPath(raw: string | null | undefined): string {
 }
 ```
 
+**Amended during execution (2026-08-05), by the user's ruling.** The code above
+is superseded: the task review found that inspecting only the literal character
+at index 1 misses a control-character bypass. Browsers strip ASCII tab, CR, and
+LF from a URL before resolving scheme and host, so `/\t/evil.com` passes the
+check above yet resolves as `//evil.com` — cross-origin. The shipped
+implementation therefore strips `\t`, `\r`, and `\n` first, runs every check
+against the cleaned value, and returns the cleaned value, so an accepted path
+can never carry the control characters onward. `tests/auth/next-path.test.ts`
+covers all three characters plus one embedded in an otherwise-valid path.
+
 - [ ] **Step 4: Run the test and confirm it passes**
 
 ```bash
 npx vitest run tests/auth/next-path.test.ts
 ```
 
-Expected: PASS (all five tests).
+Expected: PASS (all five tests, plus the control-character test added by the
+amendment above).
 
 - [ ] **Step 5: Use it in the callback route**
 

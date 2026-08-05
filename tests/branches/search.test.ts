@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import { db } from '@/db'
 import { searchBranches } from '@/lib/branches/queries'
-import { manilaHour, seedPlayer } from '../helpers/fixtures'
+import { manilaHour, seedOwner, seedPlayer } from '../helpers/fixtures'
 
 /**
  * A fresh, remote origin for one test's fixtures.
@@ -41,8 +41,7 @@ async function seedBranchAt(options: {
   opensHour?: number
   closesHour?: number
 }) {
-  const ownerId = await seedPlayer()
-  await db.execute(sql`update profiles set role = 'owner' where id = ${ownerId}::uuid`)
+  const ownerId = await seedOwner()
   const slug = 'search-fixture-' + crypto.randomUUID()
   const branch = await db.execute(sql`
     insert into branches (owner_id, name, slug, address, city, location, amenities)
@@ -70,7 +69,7 @@ async function seedBranchAt(options: {
       values (${courtId}::uuid, ${day}, ${options.opensHour ?? 7}, ${options.closesHour ?? 23})
     `)
   }
-  return { branchId, courtId, slug }
+  return { ownerId, branchId, courtId, slug }
 }
 
 /**
@@ -285,6 +284,38 @@ describe('searchBranches', () => {
     const slugs = results.map((r) => r.slug)
     expect(slugs).toContain(free.slug)
     expect(slugs).not.toContain(taken.slug)
+  })
+
+  it('excludes a branch whose only court is blocked at that hour', async () => {
+    // The "open now"/"open at hour" filter enumerates statuses explicitly
+    // rather than reusing the exclusion constraint's predicate, so 'blocked'
+    // has to be added by hand here — otherwise search advertises a branch as
+    // available at an hour its owner has taken off the market.
+    const origin = remoteOrigin()
+    const free = await seedBranchAt({ ...origin })
+    const blocked = await seedBranchAt({ ...origin })
+    await db.execute(sql`
+      insert into bookings (
+        court_id, branch_id, player_id, starts_at, ends_at, status, created_by,
+        court_fee_centavos, transaction_fee_centavos, total_charged_centavos,
+        platform_fee_centavos, processor_fee_centavos, owner_net_centavos,
+        fee_config_snapshot
+      ) values (
+        ${blocked.courtId}::uuid, ${blocked.branchId}::uuid, null,
+        '2026-09-01T18:00:00+08:00'::timestamptz, '2026-09-01T19:00:00+08:00'::timestamptz,
+        'blocked', ${blocked.ownerId}::uuid, 0, 0, 0, 0, 0, 0, null::jsonb
+      )
+    `)
+
+    const results = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: '2026-09-01',
+      hour: 18,
+    })
+    const slugs = results.map((r) => r.slug)
+    expect(slugs).toContain(free.slug)
+    expect(slugs).not.toContain(blocked.slug)
   })
 
   /**

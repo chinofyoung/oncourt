@@ -21,9 +21,9 @@ export const AMENITY_LABELS: Record<string, string> = {
 
 /**
  * Single source of truth for the amenity slug vocabulary. Shared by the
- * server-side query-param validator (`src/app/search/page.tsx`, which
+ * server-side query-param validator (`src/lib/search/params.ts`, which
  * whitelists the `?amenities=` param against this list) and the client-side
- * filter toggles (`src/components/search/filter-bar.tsx`, which renders one
+ * filter toggles (`src/components/search/filter-chips.tsx`, which renders one
  * button per slug in this order) so the enforcement path and the display
  * path cannot drift apart into two hand-maintained copies.
  */

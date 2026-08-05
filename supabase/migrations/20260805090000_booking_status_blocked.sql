@@ -1,0 +1,18 @@
+-- A block (maintenance, walk-in, owner's own game) is a bookings row with
+-- status 'blocked', NOT a separate table. Rationale, from the design spec:
+-- bookings_no_overlap is the double-booking guarantee and it only sees
+-- `bookings` rows. A separate blocks table would need hand-rolled cross-table
+-- overlap enforcement, recreating exactly the bug class the exclusion
+-- constraint kills.
+--
+-- ALONE IN THIS FILE ON PURPOSE. `supabase db push` runs each migration file
+-- inside one transaction, and Postgres refuses to *use* an enum value added in
+-- the same transaction (55P04, "unsafe use of new value"). Everything that
+-- references 'blocked' — the CHECK constraints on bookings, the
+-- bookings_no_overlap rebuild — is in 20260805090100_branch_staff_and_blocks.sql.
+-- Do NOT merge these two files.
+--
+-- `if not exists` makes this idempotent across repeated applies, which is how
+-- idempotency is proven here: `supabase db reset` is unavailable on a hosted
+-- project, so each migration is applied twice instead.
+alter type booking_status add value if not exists 'blocked';

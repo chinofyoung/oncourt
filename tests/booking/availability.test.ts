@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { buildAvailabilityGrid, loadBranchDay } from '@/lib/booking/availability'
-import { seedBranchWithCourts } from '../helpers/fixtures'
+import { manilaHour, seedBlock, seedBranchWithCourts } from '../helpers/fixtures'
 
 const INPUT = {
   date: '2026-08-15', // a Saturday
@@ -161,4 +161,28 @@ test('loadBranchDay returns one column per approved court on a multi-court branc
     expect(column.cells.find((c) => c.hour === 20)!.priceCentavos).toBe(36500)
     expect(column.cells.every((c) => c.state === 'open')).toBe(true)
   }
+})
+
+test('loadBranchDay marks a blocked hour as booked, not open', async () => {
+  // A block occupies the slot. The exclusion constraint already guarantees
+  // nobody can book over it; this is the other half — the grid must not offer
+  // a slot the constraint would then refuse, which would read to a player as
+  // the app losing their booking at the last moment.
+  const { branchId, courtIds, ownerId, slug } = await seedBranchWithCourts(1)
+  const date = '2026-12-02'
+  await seedBlock({
+    courtId: courtIds[0],
+    branchId,
+    createdBy: ownerId,
+    startsAt: manilaHour(date, 14),
+    hours: 2,
+    note: 'Resurfacing',
+  })
+
+  const result = await loadBranchDay(slug, date)
+  const cells = result!.grid[0].cells
+  expect(cells.find((c) => c.hour === 13)!.state).toBe('open')
+  expect(cells.find((c) => c.hour === 14)!.state).toBe('booked')
+  expect(cells.find((c) => c.hour === 15)!.state).toBe('booked')
+  expect(cells.find((c) => c.hour === 16)!.state).toBe('open')
 })

@@ -188,7 +188,10 @@ export async function searchBranches(filters: SearchFilters): Promise<BranchSumm
           where bk.court_id = c3.id
             and bk.slot && tstzrange(${slotStart}::timestamptz, ${slotEnd}::timestamptz, '[)')
             and (
-              bk.status in ('confirmed', 'completed')
+              -- Matches src/lib/booking/availability.ts and
+              -- bookings_no_overlap's predicate: a block takes the slot, so a
+              -- branch whose only court is blocked at this hour is not open.
+              bk.status in ('confirmed', 'completed', 'blocked')
               or (bk.status = 'pending_payment' and bk.expires_at > now())
             )
         )
@@ -542,7 +545,10 @@ export async function getHomeData(): Promise<HomeData> {
         where bk.court_id = c.id
           and bk.slot @> now()
           and (
-            bk.status in ('confirmed', 'completed')
+            -- Matches src/lib/booking/availability.ts and
+            -- bookings_no_overlap's predicate: a block takes the slot, so a
+            -- branch whose only court is blocked at this hour is not open.
+            bk.status in ('confirmed', 'completed', 'blocked')
             or (bk.status = 'pending_payment' and bk.expires_at > now())
           )
       )

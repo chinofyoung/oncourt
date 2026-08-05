@@ -6,7 +6,7 @@ import { AMENITY_SLUGS } from '@/components/ui/amenity-chip'
 /**
  * `AMENITY_SLUGS` is the single source of truth (see
  * `src/components/ui/amenity-chip.tsx`), shared with the client-side toggle
- * buttons in `filter-bar.tsx` so the enforcement (here) and display (there)
+ * buttons in `filter-chips.tsx` so the enforcement (here) and display (there)
  * vocabularies cannot drift apart.
  */
 const AMENITY_VOCAB = new Set<string>(AMENITY_SLUGS)

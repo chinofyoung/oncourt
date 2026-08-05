@@ -127,6 +127,44 @@ test('the completion sweep only touches confirmed bookings whose slot has ended'
   })
 }, 15_000)
 
+test('the completion sweep leaves a past-dated blocked row untouched', async () => {
+  // Pinned by test, not by a code change: complete_past_bookings() already
+  // filters `status = 'confirmed'`. Without this test, a future edit widening
+  // that filter would silently flip blocks to 'completed', which would put
+  // them in REAL_BOOKING and therefore into every earnings sum — as ₱0 rows,
+  // inflating booking counts and occupancy.
+  const { branchId, courtIds, ownerId } = await seedBranchWithCourts(2)
+  const playerId = await seedPlayer()
+
+  await withRollback(async (client) => {
+    await client.query(
+      `insert into bookings (court_id, branch_id, player_id, starts_at, ends_at, status,
+        created_by, note,
+        court_fee_centavos, transaction_fee_centavos, total_charged_centavos,
+        platform_fee_centavos, processor_fee_centavos, owner_net_centavos, fee_config_snapshot)
+       values
+        ($1, $2, null, now() - interval '3 hours', now() - interval '2 hours', 'blocked',
+         $3, 'Resurfacing', 0, 0, 0, 0, 0, 0, null),
+        ($4, $2, $5, now() - interval '3 hours', now() - interval '2 hours', 'confirmed',
+         null, null, 26500, 0, 26500, 2650, 0, 23850, '{}'::jsonb)`,
+      [courtIds[0], branchId, ownerId, courtIds[1], playerId],
+    )
+
+    await client.query('select complete_past_bookings()')
+
+    const result = await client.query(
+      `select status::text as status, count(*)::int as n from bookings
+       where branch_id = $1 group by status order by status::text`,
+      [branchId],
+    )
+    // The confirmed row completed; the blocked row did not move.
+    expect(result.rows).toEqual([
+      { status: 'blocked', n: 1 },
+      { status: 'completed', n: 1 },
+    ])
+  })
+}, 15_000)
+
 test('both storage buckets exist and are public-read', async () => {
   const result = await db.execute(
     sql`select id, public from storage.buckets where id in ('branch-photos', 'court-photos') order by id`,

@@ -147,8 +147,14 @@ test('a completed booking blocks an overlapping booking', async () => {
 // so a silently-absent (or silently-narrowed) constraint would make the
 // behavioural tests above merely pass differently rather than fail loudly.
 // This pins the constraint's exact shape — gist, the right two columns/
-// operators, and the full three-status predicate — independent of any
-// particular row-level behaviour.
+// operators, and the full predicate — independent of any particular
+// row-level behaviour.
+//
+// Updated by 20260805090100_branch_staff_and_blocks.sql: the predicate now
+// also lists 'blocked', so a block occupies the slot exactly like a paid
+// booking. tests/schema/blocks.test.ts covers the block-vs-booking exclusion
+// behaviourally; this test stays the one place the exact rendered definition
+// is pinned.
 test('the bookings_no_overlap constraint has the exact expected shape', async () => {
   const result = await db.execute(sql`
     select pg_get_constraintdef(oid) as def
@@ -159,7 +165,8 @@ test('the bookings_no_overlap constraint has the exact expected shape', async ()
   expect(result.rows[0].def).toBe(
     "EXCLUDE USING gist (court_id WITH =, slot WITH &&) WHERE " +
       "((status = ANY (ARRAY['pending_payment'::booking_status, " +
-      "'confirmed'::booking_status, 'completed'::booking_status])))",
+      "'confirmed'::booking_status, 'completed'::booking_status, " +
+      "'blocked'::booking_status])))",
   )
 })
 

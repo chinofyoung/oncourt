@@ -133,7 +133,11 @@ export async function loadBranchDay(
       and starts_at >= ${dayStart}::timestamptz
       and starts_at <  ${dayEnd}::timestamptz
       and (
-        status in ('confirmed', 'completed')
+        -- 'blocked' is here for the same reason it is in bookings_no_overlap's
+        -- predicate: a block takes the slot. Leaving it out would render an
+        -- open, priced cell that the exclusion constraint then refuses on
+        -- submit — the app appearing to lose a booking at the last moment.
+        status in ('confirmed', 'completed', 'blocked')
         or (status = 'pending_payment' and expires_at > now())
       )
   `)

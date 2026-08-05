@@ -16,6 +16,9 @@ steps live in `docs/runbooks/supabase-project-setup.md`. This file is the
 
 None of these are fixable from code. All three are recorded in the runbook.
 
+**Update, 2026-08-02:** open item 2 below is resolved — see item 2 itself and
+row 5 of the Definition of Done table.
+
 1. **The Data API is still enabled.** No application data is reachable — every
    table refuses both the publishable and secret keys — but `spatial_ref_sys`,
    the `geometry_columns` / `geography_columns` views, and ~932
@@ -27,10 +30,14 @@ None of these are fixable from code. All three are recorded in the runbook.
    Point` — schema metadata for a real application table, not just PostGIS
    reference data.
 
-2. **Google sign-in is UNVERIFIED.** No Google Cloud OAuth client exists and the
-   Dashboard provider was never configured. The guards, the allowlist and the
-   callback are tested against the real database; nobody has watched a browser
-   sign-in succeed. Two Definition-of-Done items depend on this.
+2. **RESOLVED (verified 2026-08-02).** Google OAuth **is** configured — see
+   `docs/superpowers/specs/2026-08-02-dashboards-and-account-menu-design.md`,
+   Scope item 11 and its Verification section: the authorize endpoint 302s to
+   Google's consent screen rather than returning `400 Unsupported provider`.
+   The guards, the allowlist and the callback are tested against the real
+   database. Not confirmed by that probe: whether the redirect allowlist
+   contains every deployed origin — Supabase validates that at callback time,
+   so a missing entry surfaces as a failed post-consent redirect.
 
 3. **Nobody has confirmed other auth providers are disabled.** This is the sharp
    one. `src/app/auth/callback/route.ts` promotes any verified-JWT email that
@@ -48,7 +55,7 @@ None of these are fixable from code. All three are recorded in the runbook.
 | 2 | `db reset && npm test` from scratch | N/A — `db reset` unavailable on a hosted project; idempotency proven by double-apply instead. **Caveat:** double-apply proves migrations are re-runnable against an already-migrated DB, not that they build a correct schema from an empty one. Ordering regressions would be invisible. |
 | 3 | Lockdown suite enumerates every table, all denied | Met, and exceeds the plan (see below) |
 | 4 | Two concurrency tests pass | Met — plus a third raw two-connection race |
-| 5 | Google sign-in works; allowlisted email promoted | **Not met** — see open item 2 |
+| 5 | Google sign-in works; allowlisted email promoted | **Met** — provider configured, verified 2026-08-02 (see open item 2). A signed-in browser walk of the allowlist-promotion path is a separate, later verification. |
 | 6 | `/venues/smash-zone-marikina` renders; slot click creates a hold | **Partial** — page and grid verified with real data; the browser click → Server Action → hold segment is gated behind the missing OAuth. Substitute evidence: a direct `createHold()` call produced a real `pending_payment` row. |
 | 7 | Runbook records the Data API decision and app-role outcome | Met |
 | 8 | No `create_booking_hold` function | Met — verified against `pg_proc` |

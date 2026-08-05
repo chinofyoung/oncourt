@@ -1,7 +1,7 @@
-import { pgTable, foreignKey, unique, check, uuid, text, integer, timestamp, index, jsonb, boolean, pgEnum } from "drizzle-orm/pg-core"
+import { pgTable, foreignKey, unique, check, uuid, text, integer, timestamp, index, boolean, jsonb, smallint, pgEnum } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
-export const bookingStatus = pgEnum("booking_status", ['pending_payment', 'confirmed', 'completed', 'expired', 'refunded_manual'])
+export const bookingStatus = pgEnum("booking_status", ['pending_payment', 'confirmed', 'completed', 'expired', 'refunded_manual', 'blocked'])
 export const courtEnvironment = pgEnum("court_environment", ['indoor', 'outdoor'])
 export const courtStatus = pgEnum("court_status", ['pending', 'approved', 'rejected', 'suspended'])
 export const payoutStatus = pgEnum("payout_status", ['pending', 'paid'])
@@ -146,11 +146,36 @@ export const courtOperatingHours = pgTable("court_operating_hours", {
 	check("court_operating_hours_order", sql`closes_hour > opens_hour`),
 ]);
 
+export const branchStaff = pgTable("branch_staff", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	branchId: uuid("branch_id").notNull(),
+	userId: uuid("user_id").notNull(),
+	viewBookings: boolean("view_bookings").default(false).notNull(),
+	blockSlots: boolean("block_slots").default(false).notNull(),
+	manageCourts: boolean("manage_courts").default(false).notNull(),
+	viewEarnings: boolean("view_earnings").default(false).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("branch_staff_user_id_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.branchId],
+			foreignColumns: [branches.id],
+			name: "branch_staff_branch_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [profiles.id],
+			name: "branch_staff_user_id_fkey"
+		}).onDelete("cascade"),
+	unique("branch_staff_unique").on(table.branchId, table.userId),
+	check("branch_staff_some_permission", sql`view_bookings OR block_slots OR manage_courts OR view_earnings`),
+]);
+
 export const bookings = pgTable("bookings", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	courtId: uuid("court_id").notNull(),
 	branchId: uuid("branch_id").notNull(),
-	playerId: uuid("player_id").notNull(),
+	playerId: uuid("player_id"),
 	startsAt: timestamp("starts_at", { withTimezone: true, mode: 'string' }).notNull(),
 	endsAt: timestamp("ends_at", { withTimezone: true, mode: 'string' }).notNull(),
 	// TODO: failed to parse database type 'tstzrange'
@@ -163,12 +188,15 @@ export const bookings = pgTable("bookings", {
 	platformFeeCentavos: integer("platform_fee_centavos").notNull(),
 	processorFeeCentavos: integer("processor_fee_centavos").default(0).notNull(),
 	ownerNetCentavos: integer("owner_net_centavos").notNull(),
-	feeConfigSnapshot: jsonb("fee_config_snapshot").notNull(),
+	feeConfigSnapshot: jsonb("fee_config_snapshot"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+	note: text(),
 }, (table) => [
 	index("bookings_branch_id_idx").using("btree", table.branchId.asc().nullsLast().op("uuid_ops")),
 	index("bookings_court_id_idx").using("btree", table.courtId.asc().nullsLast().op("uuid_ops")),
 	index("bookings_court_starts_at_idx").using("btree", table.courtId.asc().nullsLast().op("timestamptz_ops"), table.startsAt.asc().nullsLast().op("timestamptz_ops")),
+	index("bookings_created_by_idx").using("btree", table.createdBy.asc().nullsLast().op("uuid_ops")),
 	index("bookings_expiring_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'pending_payment'::booking_status)`),
 	index("bookings_player_id_idx").using("btree", table.playerId.asc().nullsLast().op("uuid_ops")),
 	foreignKey({
@@ -182,14 +210,23 @@ export const bookings = pgTable("bookings", {
 			name: "bookings_court_id_fkey"
 		}),
 	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [profiles.id],
+			name: "bookings_created_by_fkey"
+		}),
+	foreignKey({
 			columns: [table.playerId],
 			foreignColumns: [profiles.id],
 			name: "bookings_player_id_fkey"
 		}),
+	check("bookings_blocked_has_creator", sql`(status = 'blocked'::booking_status) = (created_by IS NOT NULL)`),
+	check("bookings_blocked_is_free", sql`(status <> 'blocked'::booking_status) OR ((court_fee_centavos = 0) AND (transaction_fee_centavos = 0) AND (total_charged_centavos = 0) AND (platform_fee_centavos = 0) AND (processor_fee_centavos = 0) AND (owner_net_centavos = 0))`),
 	check("bookings_court_fee_centavos_check", sql`court_fee_centavos >= 0`),
 	check("bookings_hold_has_expiry", sql`(status <> 'pending_payment'::booking_status) OR (expires_at IS NOT NULL)`),
 	check("bookings_platform_fee_centavos_check", sql`platform_fee_centavos >= 0`),
+	check("bookings_player_unless_blocked", sql`(status = 'blocked'::booking_status) OR (player_id IS NOT NULL)`),
 	check("bookings_processor_fee_centavos_check", sql`processor_fee_centavos >= 0`),
+	check("bookings_snapshot_unless_blocked", sql`(status = 'blocked'::booking_status) OR (fee_config_snapshot IS NOT NULL)`),
 	check("bookings_time_order", sql`ends_at > starts_at`),
 	check("bookings_total_charged_centavos_check", sql`total_charged_centavos >= 0`),
 	check("bookings_transaction_fee_centavos_check", sql`transaction_fee_centavos >= 0`),
@@ -216,4 +253,34 @@ export const processorRates = pgTable("processor_rates", {
 }, (table) => [
 	check("processor_rates_fixed_fee_centavos_check", sql`fixed_fee_centavos >= 0`),
 	check("processor_rates_percentage_bps_check", sql`percentage_bps >= 0`),
+]);
+
+export const reviews = pgTable("reviews", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	bookingId: uuid("booking_id").notNull(),
+	branchId: uuid("branch_id").notNull(),
+	playerId: uuid("player_id").notNull(),
+	rating: smallint().notNull(),
+	body: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("reviews_branch_id_idx").using("btree", table.branchId.asc().nullsLast().op("uuid_ops")),
+	index("reviews_player_id_idx").using("btree", table.playerId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.bookingId],
+			foreignColumns: [bookings.id],
+			name: "reviews_booking_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.branchId],
+			foreignColumns: [branches.id],
+			name: "reviews_branch_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.playerId],
+			foreignColumns: [profiles.id],
+			name: "reviews_player_id_fkey"
+		}).onDelete("cascade"),
+	unique("reviews_booking_id_key").on(table.bookingId),
+	check("reviews_rating_check", sql`(rating >= 1) AND (rating <= 5)`),
 ]);

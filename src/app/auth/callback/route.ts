@@ -2,20 +2,16 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { isAdminEmail } from '@/lib/auth/admin-allowlist'
+import { safeNextPath } from '@/lib/auth/next-path'
 import { db } from '@/db'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const rawNext = searchParams.get('next') ?? '/'
-  // Must be a same-origin path. A value like `next=https://evil.com` would
-  // otherwise concatenate into `${origin}${next}` as
-  // `http://localhost:3000https://evil.com` — not an open redirect (it
-  // doesn't parse as a valid absolute URL to evil.com), but NextResponse's
-  // internal validateURL throws on it, turning a bad query param into a 500
-  // on the login path. Requiring a leading `/` keeps the redirect on-origin
-  // and avoids that crash.
-  const next = rawNext.startsWith('/') ? rawNext : '/'
+  // Same-origin only. See src/lib/auth/next-path.ts for why a leading-slash
+  // check alone is insufficient; that rule is shared with the login page and
+  // tested in tests/auth/next-path.test.ts.
+  const next = safeNextPath(searchParams.get('next'))
 
   if (!code) return NextResponse.redirect(`${origin}/login?error=missing_code`)
 

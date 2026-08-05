@@ -204,7 +204,9 @@ export function SearchMap(props: {
         ref={containerRef}
         role="region"
         aria-label="Map of court venues"
-        className={`${MAP_SCOPE_CLASS} oncourt-search-map h-full w-full rounded-[20px] overflow-hidden`}
+        // Radius/overflow belong to whatever mounts this: the search page's
+        // map-hero band is full-bleed and square-cornered.
+        className={`${MAP_SCOPE_CLASS} oncourt-search-map h-full w-full`}
       />
     </>
   )
