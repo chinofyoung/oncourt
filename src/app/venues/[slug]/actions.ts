@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createHold, type HoldResult } from '@/lib/booking/hold'
-import { requireUser, AuthError } from '@/lib/auth/guards'
+import { requirePlayer, AuthError } from '@/lib/auth/guards'
 import { isValidCalendarDate } from '@/lib/date-manila'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -47,9 +47,24 @@ function messageFor(reason: FailureReason): string {
 export async function createHoldAction(formData: FormData): Promise<{ error: string } | never> {
   let user
   try {
-    user = await requireUser()
+    // requirePlayer, not requireUser: roles are exclusive as of the
+    // roles-and-staff slice. An owner account is a business account that can
+    // never hold a paid booking — not on someone else's courts, and not on its
+    // own (its own courts are taken off the market with `blocked` rows through
+    // /dashboard/bookings instead). Admins are refused for the same reason.
+    //
+    // 401 and 403 must be told apart here: a signed-out visitor is mid-flow
+    // and belongs at /login, while a signed-in owner needs an explanation, not
+    // a login page they are already past.
+    user = await requirePlayer()
   } catch (error) {
-    if (error instanceof AuthError) redirect('/login')
+    if (error instanceof AuthError) {
+      if (error.status === 401) redirect('/login')
+      return {
+        error:
+          "Owner and admin accounts can't book courts. To hold time on your own courts, use Bookings in your dashboard.",
+      }
+    }
     throw error
   }
 
@@ -99,7 +114,7 @@ export async function createHoldAction(formData: FormData): Promise<{ error: str
     return { error: "Something's off with that request. Please refresh the page and try again." }
   }
 
-  // playerId comes from requireUser() above, never from the form — a
+  // playerId comes from requirePlayer() above, never from the form — a
   // playerId taken from client input would let anyone create holds as
   // anyone else (there is no RLS backstop; see CLAUDE.md).
   const result = await createHold({

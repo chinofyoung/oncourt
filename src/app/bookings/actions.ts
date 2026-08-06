@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { AuthError, requireUser } from '@/lib/auth/guards'
+import { AuthError, requirePlayer } from '@/lib/auth/guards'
 import { parseReviewInput, insertReviewIfEligible } from '@/lib/bookings/review-write'
 
 export type ReviewFormState = { ok: true } | { error: string } | null
@@ -14,6 +14,14 @@ export type ReviewFormState = { ok: true } | { error: string } | null
  *
  * Returning state rather than only redirecting is what lets ReviewForm render
  * "You've already reviewed this booking" instead of appearing to do nothing.
+ *
+ * requirePlayer, not requireUser: roles are exclusive as of the roles-and-staff
+ * slice, so review eligibility deriving from "owns a completed booking" is no
+ * longer a safe stand-in for "is a player" — an owner keeps whatever completed
+ * bookings they made before being promoted, and insertReviewIfEligible's
+ * ownership check alone would still let them write a review through this
+ * action. The 401/403 split mirrors createHoldAction: signed-out goes to
+ * login, signed-in-but-not-a-player gets an explanation instead.
  */
 export async function createReviewAction(
   _prevState: ReviewFormState,
@@ -21,9 +29,12 @@ export async function createReviewAction(
 ): Promise<ReviewFormState> {
   let user
   try {
-    user = await requireUser()
+    user = await requirePlayer()
   } catch (error) {
-    if (error instanceof AuthError) redirect('/login?next=%2Fbookings%3Ftab%3Dpast')
+    if (error instanceof AuthError) {
+      if (error.status === 401) redirect('/login?next=%2Fbookings%3Ftab%3Dpast')
+      return { error: 'Only players can review courts.' }
+    }
     throw error
   }
 

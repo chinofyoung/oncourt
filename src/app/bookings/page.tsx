@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Nav } from '@/components/site/nav'
 import { Footer } from '@/components/site/footer'
 import { StatCard } from '@/components/dashboard/stat-card'
-import { requireUserPage } from '@/lib/auth/page-guards'
+import { requirePlayerPage } from '@/lib/auth/page-guards'
 import { getPlayerDashboard } from '@/lib/bookings/queries'
 import { formatDateLabel, formatHourRange, formatPeso } from '@/lib/format'
 import { photoUrl } from '@/lib/photos'
@@ -35,7 +35,11 @@ export default async function BookingsPage({
 }: {
   searchParams: Promise<{ tab?: string }>
 }) {
-  const user = await requireUserPage('/bookings')
+  // requirePlayerPage, not requireUserPage: owners can never have bookings, so
+  // /bookings has nothing to render for them — they go to /dashboard. Staff are
+  // players and keep /bookings as their home; their venue access is a separate
+  // surface, not a replacement for their own account.
+  const user = await requirePlayerPage('/bookings')
   const { tab: rawTab } = await searchParams
   const tab: Tab = TABS.includes(rawTab as Tab) ? (rawTab as Tab) : 'upcoming'
 

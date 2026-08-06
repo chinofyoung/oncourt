@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Wordmark } from '@/components/site/wordmark'
 import { AccountMenu } from '@/components/site/account-menu'
 import { getOptionalUser } from '@/lib/auth/guards'
+import { hasAnyStaffGrant } from '@/lib/staff/access'
 
 /**
  * design/branding.md, Nav: floating over heroes (absolute, transparent,
@@ -20,6 +21,15 @@ import { getOptionalUser } from '@/lib/auth/guards'
 export async function Nav({ variant = 'solid' }: { variant?: 'overlay' | 'solid' }) {
   const user = await getOptionalUser()
   const onDark = variant === 'overlay'
+
+  // Only asked for players: an owner or admin already gets the dashboard item
+  // from their role. promoteToOwner() deletes a promoted user's grants inside
+  // the same transaction as the role flip, and addBranchStaff's `for update`
+  // lock closes the race the other way (see src/lib/staff/write.ts) — together
+  // that is what makes "a non-player can never hold one" actually true, not
+  // just true absent concurrency. One indexed lookup on branch_staff
+  // (user_id), and only for a signed-in player.
+  const isStaff = user?.role === 'player' ? await hasAnyStaffGrant(user.id) : false
 
   return (
     <header
@@ -62,6 +72,7 @@ export async function Nav({ variant = 'solid' }: { variant?: 'overlay' | 'solid'
                 fullName: user.fullName ?? null,
                 avatarUrl: user.avatarUrl,
                 role: user.role,
+                isStaff,
               }}
               onDark={onDark}
             />

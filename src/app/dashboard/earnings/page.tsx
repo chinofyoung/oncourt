@@ -1,6 +1,8 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { StatCard } from '@/components/dashboard/stat-card'
-import { requireOwnerPage } from '@/lib/auth/page-guards'
+import { requireDashboardPage } from '@/lib/auth/page-guards'
+import { branchIdsWith } from '@/lib/staff/access'
 import { getOwnerEarnings } from '@/lib/owner/queries'
 import { manilaToday } from '@/lib/date-manila'
 import { formatPeso } from '@/lib/format'
@@ -47,7 +49,11 @@ export default async function OwnerEarningsPage({
 }: {
   searchParams: Promise<{ month?: string }>
 }) {
-  const user = await requireOwnerPage('/dashboard/earnings')
+  const access = await requireDashboardPage('/dashboard/earnings')
+  // Earnings is the one dashboard surface that is purely money. Staff see it
+  // only with view_earnings; the sidebar hides the item, and this is the
+  // boundary for a typed URL.
+  if (!access.can.view_earnings) redirect('/dashboard')
   const { month: rawMonth } = await searchParams
 
   // An invalid or missing `?month=` falls back to the current Manila month
@@ -56,7 +62,12 @@ export default async function OwnerEarningsPage({
   const currentMonth = manilaToday().slice(0, 7)
   const month = rawMonth && MONTH_RE.test(rawMonth) ? rawMonth : currentMonth
 
-  const { rows, totals } = await getOwnerEarnings(user.id, month)
+  // Scoped to view_earnings branches specifically, not every branch this
+  // session can see at all: a staff member could hold view_earnings on one
+  // branch and, say, manage_courts on another, and the redirect above only
+  // guarantees the union is non-empty — access.branches would still include
+  // the branch they were never granted earnings visibility on.
+  const { rows, totals } = await getOwnerEarnings(branchIdsWith(access, 'view_earnings'), month)
 
   return (
     <>

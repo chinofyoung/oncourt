@@ -7,6 +7,7 @@ import {
   requireUser,
   type SessionUser,
 } from '@/lib/auth/guards'
+import { loadDashboardAccess, type DashboardAccess } from '@/lib/staff/access'
 import { safeNextPath } from './next-path'
 
 /**
@@ -67,4 +68,26 @@ export async function requirePlayerPage(next: string): Promise<SessionUser> {
     }
     throw error
   }
+}
+
+/**
+ * The /dashboard/* gate, and the one guard that admits staff.
+ *
+ * "Owner, or holds at least one branch_staff row." A signed-out visitor goes
+ * to login (via requireUserPage, so the same-origin `next` rule is shared); a
+ * signed-in player with no grants goes to /bookings, which is their actual
+ * home.
+ *
+ * Returns the resolved access rather than just the user: the layout needs it
+ * for the sidebar, and every page needs its `branches` list to scope queries.
+ * App Router cannot pass a value from a layout to a page, so each page calls
+ * this again — a claims read, one indexed profile lookup, and one indexed
+ * branch/grant query. That is the same cost the previous slice already paid
+ * calling requireOwnerPage per page.
+ */
+export async function requireDashboardPage(next: string): Promise<DashboardAccess> {
+  const user = await requireUserPage(next)
+  const access = await loadDashboardAccess(user)
+  if (!access.isOwner && access.branches.length === 0) redirect('/bookings')
+  return access
 }

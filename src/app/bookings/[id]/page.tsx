@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Nav } from '@/components/site/nav'
 import { Footer } from '@/components/site/footer'
-import { requireUserPage } from '@/lib/auth/page-guards'
+import { requirePlayerPage } from '@/lib/auth/page-guards'
 import { getBookingReceipt } from '@/lib/bookings/queries'
 import { formatDateLabel, formatHourRange, formatPeso } from '@/lib/format'
 
@@ -10,6 +10,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * A booking's receipt.
+ *
+ * requirePlayerPage, not requireUserPage: a receipt is a player artifact, and
+ * an owner reaching one has nothing to see there either (getBookingReceipt
+ * scopes by player_id, so it would return null and 404 anyway — the redirect
+ * to /dashboard is the better answer).
  *
  * Both "no such booking" and "not your booking" render notFound(). That is
  * deliberate: a distinct 403 for someone else's id would confirm the row
@@ -22,7 +27,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  */
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const user = await requireUserPage(`/bookings/${id}`)
+  const user = await requirePlayerPage(`/bookings/${id}`)
   if (!UUID_RE.test(id)) notFound()
 
   const receipt = await getBookingReceipt(id, user.id)

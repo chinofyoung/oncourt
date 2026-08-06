@@ -9,7 +9,14 @@ export type AccountMenuUser = {
   fullName: string | null
   avatarUrl: string | null
   role: 'player' | 'owner' | 'admin'
+  /** Holds >= 1 branch_staff row. Only ever true for role 'player' — see <Nav>. */
+  isStaff: boolean
 }
+
+// One definition instead of the three identical copies this file carried.
+// Branded focus-visible ring on every interactive element — Global Constraints.
+const FOCUS_RING =
+  'outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--court)] focus-visible:outline-offset-2'
 
 /**
  * The nav's signed-in control. Replaces a bare avatar badge that was not a
@@ -24,6 +31,11 @@ export type AccountMenuUser = {
  *
  * There is no Admin item. /admin/* does not exist yet in this slice, and an
  * item pointing at a 404 is worse than no item.
+ *
+ * Item visibility is role-derived: an owner (or admin) loses "My bookings"
+ * (they can never have one), and a player holding >= 1 branch_staff grant
+ * gains "Venue dashboard" alongside it. `isStaff` is resolved server-side in
+ * <Nav> — a client component like this one cannot query the database.
  */
 export function AccountMenu({ user, onDark }: { user: AccountMenuUser; onDark: boolean }) {
   const [open, setOpen] = useState(false)
@@ -55,6 +67,14 @@ export function AccountMenu({ user, onDark }: { user: AccountMenuUser; onDark: b
   }, [open])
 
   const isOwner = user.role === 'owner' || user.role === 'admin'
+  // Owners can never have bookings, so "My bookings" would always be empty for
+  // them and /bookings redirects them away anyway.
+  const showBookings = !isOwner
+  // Staff get the same dashboard, under a name that describes what they are
+  // seeing: they do not own the venue, they work at it. Null means no
+  // dashboard item at all — a plain player has no dashboard to go to, and an
+  // item pointing somewhere that redirects straight back is worse than none.
+  const dashboardLabel = isOwner ? 'Owner dashboard' : user.isStaff ? 'Venue dashboard' : null
   const label = user.fullName ?? user.email
   const initial = (user.fullName ?? user.email).charAt(0).toUpperCase()
 
@@ -98,21 +118,23 @@ export function AccountMenu({ user, onDark }: { user: AccountMenuUser; onDark: b
             <div className="truncate text-[12.5px] text-[var(--ink-soft)]">{user.email}</div>
           </div>
 
-          <Link
-            href="/bookings"
-            onClick={() => setOpen(false)}
-            className="mt-2 block rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium text-[var(--ink)] outline-none hover:bg-[var(--surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--court)] focus-visible:outline-offset-2"
-          >
-            My bookings
-          </Link>
+          {showBookings && (
+            <Link
+              href="/bookings"
+              onClick={() => setOpen(false)}
+              className={`mt-2 block rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium text-[var(--ink)] ${FOCUS_RING} hover:bg-[var(--surface)]`}
+            >
+              My bookings
+            </Link>
+          )}
 
-          {isOwner && (
+          {dashboardLabel && (
             <Link
               href="/dashboard"
               onClick={() => setOpen(false)}
-              className="block rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium text-[var(--ink)] outline-none hover:bg-[var(--surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--court)] focus-visible:outline-offset-2"
+              className={`${showBookings ? '' : 'mt-2 '}block rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium text-[var(--ink)] ${FOCUS_RING} hover:bg-[var(--surface)]`}
             >
-              Owner dashboard
+              {dashboardLabel}
             </Link>
           )}
 
@@ -121,7 +143,7 @@ export function AccountMenu({ user, onDark }: { user: AccountMenuUser; onDark: b
           <form action={signOutAction} className="mt-1 border-t border-[var(--hairline)] pt-1">
             <button
               type="submit"
-              className="block w-full rounded-[10px] px-3 py-2.5 text-left text-[13.5px] font-medium text-[var(--ink)] outline-none hover:bg-[var(--surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--court)] focus-visible:outline-offset-2"
+              className={`block w-full rounded-[10px] px-3 py-2.5 text-left text-[13.5px] font-medium text-[var(--ink)] ${FOCUS_RING} hover:bg-[var(--surface)]`}
             >
               Sign out
             </button>

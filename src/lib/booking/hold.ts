@@ -2,6 +2,11 @@ import { sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { manilaWeekday } from '@/lib/date-manila'
 import { priceSlots, PricingError, type RateBand } from '@/lib/booking/pricing'
+import {
+  PG_DEADLOCK_DETECTED,
+  PG_EXCLUSION_VIOLATION,
+  sqlStateOf,
+} from '@/lib/db/sql-state'
 
 export const MAX_CONCURRENT_HOLDS = 3
 
@@ -64,22 +69,6 @@ export type HoldResult =
 function manilaInstant(date: string, hour: number): string | undefined {
   const instant = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00+08:00`)
   return Number.isNaN(instant.getTime()) ? undefined : instant.toISOString()
-}
-
-const PG_EXCLUSION_VIOLATION = '23P01'
-const PG_DEADLOCK_DETECTED = '40P01'
-
-/**
- * SQLSTATE of a failed query, wherever it landed. drizzle-orm 0.45.2's
- * `db.execute`/`tx.execute` wrap the driver error in `DrizzleQueryError` and
- * only expose the original `pg` error as `.cause` (see
- * node_modules/drizzle-orm/pg-core/session.js and Task 7's bookings tests) —
- * so the code lives at `.cause.code`, not `.code`, for anything raised
- * through drizzle. Checking both keeps this robust either way.
- */
-function sqlStateOf(error: unknown): string | undefined {
-  const withCause = error as { cause?: { code?: string }; code?: string }
-  return withCause?.cause?.code ?? withCause?.code
 }
 
 export async function createHold(input: CreateHoldInput): Promise<HoldResult> {

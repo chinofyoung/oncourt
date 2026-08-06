@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Wordmark } from '@/components/site/wordmark'
-import { requireOwnerPage } from '@/lib/auth/page-guards'
+import { requireDashboardPage } from '@/lib/auth/page-guards'
 import { signOutAction } from '@/app/auth/sign-out/actions'
 
 // Global Constraints (this plan) mandate a branded focus-visible ring on
@@ -17,13 +17,24 @@ const FOCUS_RING =
  * item pointing at a 404 is worse than no item.
  */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const user = await requireOwnerPage('/dashboard')
+  const access = await requireDashboardPage('/dashboard')
+  const user = access.user
 
+  // Only sections this session can actually use. A staff member without
+  // view_earnings must not see an Earnings item that then bounces them; a
+  // staff member must not see Staff at all, since staff management is
+  // owner-only (requireOwnerPage guards that page, and its actions use
+  // requireOwnerOf).
+  //
+  // Overview is unconditional: everyone admitted here has at least one
+  // permission on at least one branch (branch_staff_some_permission
+  // guarantees it), and the overview degrades to the empty state otherwise.
   const items = [
-    { href: '/dashboard', label: 'Overview' },
-    { href: '/dashboard/bookings', label: 'Bookings' },
-    { href: '/dashboard/earnings', label: 'Earnings' },
-  ]
+    { href: '/dashboard', label: 'Overview', show: true },
+    { href: '/dashboard/bookings', label: 'Bookings', show: access.can.view_bookings },
+    { href: '/dashboard/earnings', label: 'Earnings', show: access.can.view_earnings },
+    { href: '/dashboard/staff', label: 'Staff', show: access.isOwner },
+  ].filter((item) => item.show)
 
   return (
     <div className="flex min-h-dvh max-[980px]:flex-col">
@@ -55,7 +66,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 {user.businessName ?? user.fullName ?? user.email}
               </div>
               <div className="font-mono text-[10px] tracking-[.12em] text-[var(--ink-soft)] uppercase">
-                {user.role}
+                {access.isOwner ? user.role : 'Staff'}
               </div>
             </div>
           </div>

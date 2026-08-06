@@ -8,7 +8,16 @@ export type OwnerGridBooking = {
   courtId: string
   startHour: number
   endHour: number
-  playerName: string
+  /**
+   * Who or what holds this slot: the player's display name for a booking, the
+   * block's note for a block, or 'Blocked' when a block carries no note.
+   *
+   * Named `label`, not `playerName`, since the roles-and-staff slice: a field
+   * called playerName holding the string 'Blocked' is a field that lies.
+   */
+  label: string
+  isBlock: boolean
+  note: string | null
 }
 export type OwnerStats = {
   bookingsThisWeek: number
@@ -40,9 +49,13 @@ export type OwnerBookingRow = {
   date: string
   startHour: number
   endHour: number
+  branchId: string
   branchName: string
   courtName: string
-  playerName: string
+  /** Same rule as OwnerGridBooking.label. */
+  label: string
+  isBlock: boolean
+  note: string | null
   status: string
   totalChargedCentavos: number
   ownerNetCentavos: number
@@ -62,12 +75,52 @@ export type OwnerEarnings = {
 }
 
 /**
- * `confirmed` and `completed` only — the same rule as
- * `src/lib/bookings/queries.ts`'s player-facing module. Defined locally
- * rather than imported: it is three words, and importing across query
- * modules for it would be a heavier coupling than the fragment itself.
+ * MONEY surfaces: gross, net, earnings, the weekly booking count. `confirmed`
+ * and `completed` only — the same rule as `src/lib/bookings/queries.ts`'s
+ * player-facing module. `blocked` is excluded because a block is not revenue
+ * and not a booking; `pending_payment` because an unpaid hold is not either;
+ * `expired`/`refunded_manual` because they never became real.
+ *
+ * Defined locally rather than imported from the player module: it is three
+ * words, and importing across query modules for it would be a heavier coupling
+ * than the fragment itself.
  */
 const REAL_BOOKING = sql`bk.status in ('confirmed', 'completed')`
+
+/**
+ * SCHEDULE surfaces: the owner day grid and the /dashboard/bookings list.
+ * Real bookings PLUS blocks, because a block occupies the slot and the people
+ * running the venue have to see what is actually unavailable — that is the
+ * whole point of blocks existing.
+ *
+ * Deliberately NOT the same as bookings_no_overlap's predicate, which also
+ * includes `pending_payment`: an unpaid hold is a checkout in progress, not
+ * something an owner acts on, and showing one as taken court time would tell
+ * an owner they have a booking nobody has paid for. `expired` and
+ * `refunded_manual` occupy nothing.
+ */
+const SCHEDULE_ROW = sql`bk.status in ('confirmed', 'completed', 'blocked')`
+
+/**
+ * The display value for a schedule row, from a LEFT-joined profiles row.
+ *
+ * The join MUST be left: a `blocked` row has a null `player_id`, and the inner
+ * join this replaced silently dropped every block from the grid and the
+ * bookings list — the slot rendered free while the exclusion constraint
+ * refused every attempt to book it.
+ *
+ * `nullif(btrim(...), '')` so a whitespace-only note falls through to
+ * 'Blocked' instead of rendering an empty cell. For a paid booking the
+ * profiles row is always present, so the note/'Blocked' tail is unreachable.
+ */
+const SCHEDULE_LABEL = sql`
+  coalesce(
+    pr.full_name,
+    split_part(pr.email, '@', 1),
+    nullif(btrim(bk.note), ''),
+    'Blocked'
+  )
+`
 
 /**
  * A booking's end hour in Manila's local clock, with the midnight edge case
@@ -106,16 +159,43 @@ function toGridCourt(row: Record<string, unknown>): OwnerGridCourt {
   }
 }
 
-function toPlayerName(row: Record<string, unknown>): string {
-  return row.player_name as string
+/**
+ * Approved courts inside a scoped set of branches.
+ *
+ * `branchIds` replaces the previous `ownerId` scoping throughout this module.
+ * That change is what admits staff: a branch_staff member is not the owner, so
+ * `b.owner_id = $` structurally cannot include them, while an explicit id list
+ * resolved once by `loadDashboardAccess` works for owners and staff alike. The
+ * filter is still entirely in SQL — nothing is filtered in TypeScript after
+ * the fetch — and the list itself comes from a guarded query, never from
+ * client input.
+ *
+ * An empty array serializes to the Postgres empty array `{}`, so
+ * `= any ('{}'::uuid[])` matches nothing and every query returns zero rows.
+ * That is the correct answer for an owner who has not created a branch yet.
+ */
+function approvedCourtsIn(branchIds: string[]) {
+  return sql`
+    select c.id as court_id, c.name as court_name, b.id as branch_id, b.name as branch_name
+    from courts c
+    join branches b on b.id = c.branch_id
+    where b.id = any (${sql.param(branchIds)}::uuid[]) and c.status = 'approved'
+  `
 }
 
-/** All branches the caller owns — feeds the branch filter dropdown. */
-export async function getOwnerBranches(ownerId: string): Promise<{ id: string; name: string }[]> {
+/**
+ * The scoped, approved courts as a flat list — the grid's columns, and the
+ * option list for the block form (Task 9). Only 'approved' courts: a pending
+ * or suspended court has no column in the grid, and the block writer refuses
+ * it too, so offering it anywhere would create rows that render nowhere.
+ */
+export async function getScheduleCourts(branchIds: string[]): Promise<OwnerGridCourt[]> {
   const result = await db.execute(sql`
-    select id, name from branches where owner_id = ${ownerId}::uuid order by name
+    with scoped_courts as (${approvedCourtsIn(branchIds)})
+    select court_id, court_name, branch_name from scoped_courts
+    order by branch_name, court_name
   `)
-  return result.rows.map((row) => ({ id: row.id as string, name: row.name as string }))
+  return result.rows.map(toGridCourt)
 }
 
 /**
@@ -125,31 +205,17 @@ export async function getOwnerBranches(ownerId: string): Promise<{ id: string; n
  * join, matching the player dashboard module's precedent — each piece backs
  * an independently rendered panel and the row shapes do not line up.
  *
- * Every query below is scoped by `b.owner_id = ${ownerId}` in its WHERE
+ * Every query below is scoped by `b.id = any (branchIds)` in its WHERE
  * clause. Ownership is never filtered in TypeScript.
  */
-export async function getOwnerOverview(ownerId: string, day: string): Promise<OwnerOverview> {
-  const branchCountResult = await db.execute(sql`
-    select count(*)::int as branch_count from branches where owner_id = ${ownerId}::uuid
-  `)
-  const branchCount = Number(branchCountResult.rows[0].branch_count)
+export async function getOwnerOverview(branchIds: string[], day: string): Promise<OwnerOverview> {
+  // The scope list IS the visible branch count — a round trip to recount it
+  // would only introduce a way for the two to disagree.
+  const branchCount = branchIds.length
 
-  // The owner's approved courts, across all their branches. Reused (as a CTE)
-  // by the operating-hours query below so both agree on exactly which courts
-  // count.
-  const ownedApprovedCourts = sql`
-    select c.id as court_id, c.name as court_name, b.id as branch_id, b.name as branch_name
-    from courts c
-    join branches b on b.id = c.branch_id
-    where b.owner_id = ${ownerId}::uuid and c.status = 'approved'
-  `
+  const scopedCourts = approvedCourtsIn(branchIds)
 
-  const courtsResult = await db.execute(sql`
-    with owned_courts as (${ownedApprovedCourts})
-    select court_id, court_name, branch_name from owned_courts
-    order by branch_name, court_name
-  `)
-  const courts = courtsResult.rows.map(toGridCourt)
+  const courts = await getScheduleCourts(branchIds)
 
   // "That Manila weekday" is the weekday of `day` itself, computed the same
   // way as src/lib/date-manila.ts's manilaWeekday(): extract(dow ...) on the
@@ -158,14 +224,14 @@ export async function getOwnerOverview(ownerId: string, day: string): Promise<Ow
   // convention). Casting `day` to `date` (not `timestamptz`) keeps this a pure
   // calendar-date computation with no timezone shift to get wrong.
   const hoursResult = await db.execute(sql`
-    with owned_courts as (${ownedApprovedCourts})
+    with scoped_courts as (${scopedCourts})
     select
       min(oh.opens_hour)::int as open_hour,
       max(oh.closes_hour)::int as close_hour,
       coalesce(sum(oh.closes_hour - oh.opens_hour), 0)::int as operating_hours
-    from owned_courts oc
+    from scoped_courts sc
     join court_operating_hours oh
-      on oh.court_id = oc.court_id
+      on oh.court_id = sc.court_id
      and oh.day_of_week = extract(dow from ${day}::date)::int
   `)
   const hoursRow = hoursResult.rows[0]
@@ -173,22 +239,26 @@ export async function getOwnerOverview(ownerId: string, day: string): Promise<Ow
   const closeHour = hoursRow.close_hour === null ? DEFAULT_CLOSE_HOUR : Number(hoursRow.close_hour)
   const operatingHours = Number(hoursRow.operating_hours)
 
-  // Scoped to the same owned_courts CTE as the grid and the operating-hours
-  // denominator above, so numerator, denominator, and grid all agree on
-  // exactly which courts count. A suspended (non-approved) court's bookings
-  // are therefore invisible here by design: it has no column in the grid and
-  // no capacity in the denominator, so including its booked hours in the
-  // numerator would inflate occupancy past 100% for rows that render nowhere.
+  // Scoped to the same scoped_courts set as the operating-hours denominator,
+  // so grid, numerator, and denominator all agree on which courts count. A
+  // suspended court's rows are invisible here by design: no column, no
+  // capacity, so counting its hours would push occupancy past 100% for rows
+  // that render nowhere.
+  //
+  // SCHEDULE_ROW, and a LEFT join on profiles: blocks belong on this surface
+  // and have no player_id. The inner join this replaced dropped them silently.
   const todaysBookingsResult = await db.execute(sql`
-    with owned_courts as (${ownedApprovedCourts})
+    with scoped_courts as (${scopedCourts})
     select bk.id as booking_id, bk.court_id,
       extract(hour from (bk.starts_at at time zone 'Asia/Manila'))::int as start_hour,
       ${MANILA_END_HOUR} as end_hour,
-      coalesce(pr.full_name, split_part(pr.email, '@', 1)) as player_name
+      (bk.status = 'blocked') as is_block,
+      bk.note,
+      ${SCHEDULE_LABEL} as label
     from bookings bk
-    join owned_courts oc on oc.court_id = bk.court_id
-    join profiles pr on pr.id = bk.player_id
-    where ${REAL_BOOKING}
+    join scoped_courts sc on sc.court_id = bk.court_id
+    left join profiles pr on pr.id = bk.player_id
+    where ${SCHEDULE_ROW}
       and to_char(bk.starts_at at time zone 'Asia/Manila', 'YYYY-MM-DD') = ${day}
     order by bk.starts_at
   `)
@@ -197,12 +267,18 @@ export async function getOwnerOverview(ownerId: string, day: string): Promise<Ow
     courtId: row.court_id as string,
     startHour: Number(row.start_hour),
     endHour: Number(row.end_hour),
-    playerName: toPlayerName(row),
+    label: row.label as string,
+    isBlock: row.is_block === true,
+    note: (row.note as string | null) ?? null,
   }))
 
-  // Booked hours today, for the occupancy numerator, is just the sum of the
-  // durations already fetched above — no second SQL round trip needed for it.
-  const bookedHoursToday = todaysBookings.reduce((sum, b) => sum + (b.endHour - b.startHour), 0)
+  // Occupancy is PAID utilization: it sits in the stat row beside gross and
+  // net and has to mean the same thing they do. A resurfacing block reading as
+  // 100% occupancy would be the metric lying about the business. Filtered from
+  // the rows already fetched — no extra round trip.
+  const bookedHoursToday = todaysBookings
+    .filter((booking) => !booking.isBlock)
+    .reduce((sum, booking) => sum + (booking.endHour - booking.startHour), 0)
   // null (not 0) when there is no capacity to divide by (no approved courts,
   // or none open on this weekday) — a "0%" would misleadingly say "open all
   // day, nobody came" rather than "nothing to measure".
@@ -217,7 +293,7 @@ export async function getOwnerOverview(ownerId: string, day: string): Promise<Ow
       coalesce(sum(bk.owner_net_centavos), 0)::bigint as net_centavos
     from bookings bk
     join branches b on b.id = bk.branch_id
-    where b.owner_id = ${ownerId}::uuid
+    where b.id = any (${sql.param(branchIds)}::uuid[])
       and ${REAL_BOOKING}
       and (bk.starts_at at time zone 'Asia/Manila') >= date_trunc('week', ${day}::date)
       and (bk.starts_at at time zone 'Asia/Manila') <  date_trunc('week', ${day}::date) + interval '7 days'
@@ -229,7 +305,7 @@ export async function getOwnerOverview(ownerId: string, day: string): Promise<Ow
       to_char(c.created_at at time zone 'Asia/Manila', 'YYYY-MM-DD') as created_at
     from courts c
     join branches b on b.id = c.branch_id
-    where b.owner_id = ${ownerId}::uuid and c.status = 'pending'
+    where b.id = any (${sql.param(branchIds)}::uuid[]) and c.status = 'pending'
     order by c.created_at
   `)
   const pendingCourts: OwnerPendingCourt[] = pendingCourtsResult.rows.map((row) => ({
@@ -243,6 +319,12 @@ export async function getOwnerOverview(ownerId: string, day: string): Promise<Ow
   // owner's branches, merged and re-sorted in TypeScript (the two shapes
   // don't line up for a SQL UNION, and composing the human-readable string
   // here is clearer than building it with `format()`).
+  //
+  // Activity is a feed of things PLAYERS did, so REAL_BOOKING — a block is the
+  // owner's own action and is not news to them. The `join profiles` below can
+  // therefore stay INNER: REAL_BOOKING guarantees a non-null player_id. If
+  // that filter is ever widened to include 'blocked', this join must become a
+  // LEFT join with SCHEDULE_LABEL, or blocks will be dropped silently.
   const recentBookingsResult = await db.execute(sql`
     select bk.created_at as at, c.name as court_name, b.name as branch_name,
       coalesce(pr.full_name, split_part(pr.email, '@', 1)) as player_name
@@ -250,7 +332,7 @@ export async function getOwnerOverview(ownerId: string, day: string): Promise<Ow
     join branches b on b.id = bk.branch_id
     join courts c   on c.id = bk.court_id
     join profiles pr on pr.id = bk.player_id
-    where b.owner_id = ${ownerId}::uuid and ${REAL_BOOKING}
+    where b.id = any (${sql.param(branchIds)}::uuid[]) and ${REAL_BOOKING}
     order by bk.created_at desc
     limit 8
   `)
@@ -262,7 +344,7 @@ export async function getOwnerOverview(ownerId: string, day: string): Promise<Ow
     join bookings bk on bk.id = rv.booking_id
     join courts c    on c.id = bk.court_id
     join profiles pr on pr.id = rv.player_id
-    where b.owner_id = ${ownerId}::uuid
+    where b.id = any (${sql.param(branchIds)}::uuid[])
     order by rv.created_at desc
     limit 8
   `)
@@ -271,12 +353,12 @@ export async function getOwnerOverview(ownerId: string, day: string): Promise<Ow
     ...recentBookingsResult.rows.map((row) => ({
       kind: 'booking' as const,
       at: new Date(row.at as string).toISOString(),
-      text: `${toPlayerName(row)} booked ${row.court_name as string} at ${row.branch_name as string}`,
+      text: `${row.player_name as string} booked ${row.court_name as string} at ${row.branch_name as string}`,
     })),
     ...recentReviewsResult.rows.map((row) => ({
       kind: 'review' as const,
       at: new Date(row.at as string).toISOString(),
-      text: `${toPlayerName(row)} left a ${Number(row.rating)}-star review for ${row.court_name as string}`,
+      text: `${row.player_name as string} left a ${Number(row.rating)}-star review for ${row.court_name as string}`,
     })),
   ]
     .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
@@ -300,14 +382,19 @@ export async function getOwnerOverview(ownerId: string, day: string): Promise<Ow
 }
 
 /**
- * The owner's bookings list for one day, optionally narrowed to one branch.
- * `REAL_BOOKING`-filtered, same as the overview grid: this is a list of court
- * time actually taken, not a hold-management queue. A `pending_payment` hold
- * that never completed, or a refunded/expired row, is not a booking an owner
- * needs to act on here.
+ * The day's schedule for the scoped branches, optionally narrowed to one.
+ *
+ * SCHEDULE_ROW, not REAL_BOOKING: blocks take slots, and this list is what an
+ * owner or front-desk person reads to know who has the court. A
+ * `pending_payment` hold still stays out — an unpaid checkout in progress is
+ * not court time taken — as do `expired` and `refunded_manual`.
+ *
+ * `filters.branchId` is belt-and-braces on top of the scope list: the `any`
+ * clause already makes an unscoped branch id return nothing, so a forged
+ * filter cannot widen access, only narrow it.
  */
 export async function getOwnerBookings(
-  ownerId: string,
+  branchIds: string[],
   filters: { day: string; branchId?: string },
 ): Promise<OwnerBookingRow[]> {
   const branchFilter = filters.branchId ? sql`and b.id = ${filters.branchId}::uuid` : sql``
@@ -317,16 +404,18 @@ export async function getOwnerBookings(
       to_char(bk.starts_at at time zone 'Asia/Manila', 'YYYY-MM-DD') as date,
       extract(hour from (bk.starts_at at time zone 'Asia/Manila'))::int as start_hour,
       ${MANILA_END_HOUR} as end_hour,
-      b.name as branch_name, c.name as court_name,
-      coalesce(pr.full_name, split_part(pr.email, '@', 1)) as player_name,
+      b.id as branch_id, b.name as branch_name, c.name as court_name,
+      (bk.status = 'blocked') as is_block,
+      bk.note,
+      ${SCHEDULE_LABEL} as label,
       bk.status,
       bk.total_charged_centavos, bk.owner_net_centavos
     from bookings bk
     join branches b on b.id = bk.branch_id
     join courts c   on c.id = bk.court_id
-    join profiles pr on pr.id = bk.player_id
-    where b.owner_id = ${ownerId}::uuid
-      and ${REAL_BOOKING}
+    left join profiles pr on pr.id = bk.player_id
+    where b.id = any (${sql.param(branchIds)}::uuid[])
+      and ${SCHEDULE_ROW}
       and to_char(bk.starts_at at time zone 'Asia/Manila', 'YYYY-MM-DD') = ${filters.day}
       ${branchFilter}
     order by bk.starts_at
@@ -337,9 +426,12 @@ export async function getOwnerBookings(
     date: row.date as string,
     startHour: Number(row.start_hour),
     endHour: Number(row.end_hour),
+    branchId: row.branch_id as string,
     branchName: row.branch_name as string,
     courtName: row.court_name as string,
-    playerName: toPlayerName(row),
+    label: row.label as string,
+    isBlock: row.is_block === true,
+    note: (row.note as string | null) ?? null,
     status: row.status as string,
     totalChargedCentavos: Number(row.total_charged_centavos),
     ownerNetCentavos: Number(row.owner_net_centavos),
@@ -351,9 +443,11 @@ export async function getOwnerBookings(
  * TypeScript (not a second SQL rollup) — that is what makes the "rollup
  * equals sum of parts" test meaningful rather than tautological. Only
  * REAL_BOOKING rows count: an expired hold or a manually refunded booking
- * never became real revenue.
+ * never became real revenue. Blocks never appear: they are excluded by
+ * REAL_BOOKING, and bookings_blocked_is_free guarantees they carry no money to
+ * leak even if that filter were widened.
  */
-export async function getOwnerEarnings(ownerId: string, month: string): Promise<OwnerEarnings> {
+export async function getOwnerEarnings(branchIds: string[], month: string): Promise<OwnerEarnings> {
   const result = await db.execute(sql`
     select b.id as branch_id, b.name as branch_name,
       count(*)::int as booking_count,
@@ -362,7 +456,7 @@ export async function getOwnerEarnings(ownerId: string, month: string): Promise<
       coalesce(sum(bk.owner_net_centavos), 0)::bigint as net_centavos
     from bookings bk
     join branches b on b.id = bk.branch_id
-    where b.owner_id = ${ownerId}::uuid
+    where b.id = any (${sql.param(branchIds)}::uuid[])
       and ${REAL_BOOKING}
       and date_trunc('month', bk.starts_at at time zone 'Asia/Manila') = ${month + '-01'}::date
     group by b.id, b.name

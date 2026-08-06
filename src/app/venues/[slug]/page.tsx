@@ -9,6 +9,7 @@ import { Nav } from '@/components/site/nav'
 import { Footer } from '@/components/site/footer'
 import { getBranchDetail } from '@/lib/branches/queries'
 import { loadBranchDay } from '@/lib/booking/availability'
+import { getOptionalUser } from '@/lib/auth/guards'
 import { isValidCalendarDate, manilaToday, shiftDay } from '@/lib/date-manila'
 import { formatDateLabel, formatPriceFrom } from '@/lib/format'
 
@@ -71,6 +72,15 @@ export default async function BranchPage(props: {
   if (!detail || !result) notFound()
 
   const isToday = day === manilaToday()
+
+  // Signed-out visitors keep the CTA: clicking it redirects to /login and
+  // returns them here, which is the funnel. Only a signed-in non-player has
+  // the CTA withdrawn, because for them it can never succeed.
+  //
+  // <Nav> already calls getOptionalUser() on every page, so this adds no
+  // dynamic-rendering cost that was not already paid.
+  const viewer = await getOptionalUser()
+  const canBook = viewer === null || viewer.role === 'player'
 
   return (
     <>
@@ -182,6 +192,7 @@ export default async function BranchPage(props: {
                 branchId={result.branch.id as string}
                 slug={slug}
                 date={day}
+                canBook={canBook}
               />
             )}
           </section>

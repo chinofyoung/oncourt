@@ -21,6 +21,16 @@ import { createHoldAction } from '@/app/venues/[slug]/actions'
 // was updated in the same turn to describe a plain (untinted) time spine
 // instead of documenting a look this component doesn't implement. See
 // task-9-report.md fix round 1.
+//
+// `canBook` (required, resolved by the venue page from `getOptionalUser()`)
+// is false for a signed-in owner or admin session — roles are exclusive as
+// of the roles-and-staff slice, and neither can ever hold a paid booking.
+// Both the per-cell click handler and the summary bar honor it, folding
+// `!canBook` into the same non-interactive treatment cells already have for
+// booked/closed rather than adding a fourth visual state. This is UI-only:
+// the authoritative check is `requirePlayer` in
+// src/app/venues/[slug]/actions.ts, which a forged form POST still has to
+// pass regardless of what this component renders.
 
 function formatPeso(centavos: number): string {
   const pesos = centavos / 100
@@ -52,6 +62,7 @@ export function AvailabilityGrid(props: {
   branchId: string
   slug: string
   date: string
+  canBook: boolean
 }) {
   const [selection, setSelection] = useState<Selection | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -150,9 +161,14 @@ export function AvailabilityGrid(props: {
                         // click handler below is the actual guard against
                         // selecting a non-open cell (previously enforced
                         // only by the native `disabled` attribute).
-                        aria-disabled={cell.state !== 'open'}
+                        // `!canBook` folds into the same non-interactive
+                        // treatment as booked/closed rather than getting a
+                        // fourth visual state: to an owner, every cell is
+                        // simply not theirs to click. Still focusable (not
+                        // `disabled`), so a keyboard user can read the prices.
+                        aria-disabled={!props.canBook || cell.state !== 'open'}
                         onClick={() => {
-                          if (cell.state === 'open') toggle(court.courtId, hour)
+                          if (props.canBook && cell.state === 'open') toggle(court.courtId, hour)
                         }}
                         aria-pressed={selected}
                         aria-label={`${court.courtName} at ${formatHour(hour)}, ${
@@ -196,7 +212,16 @@ export function AvailabilityGrid(props: {
       )}
 
       <div className="sticky bottom-0 flex flex-wrap items-center gap-4 rounded-b-[20px] border-t-2 border-[var(--ink)] bg-[var(--panel)] px-5 py-4">
-        {!selection ? (
+        {!props.canBook ? (
+          /* The server guard (requirePlayer in
+             src/app/venues/[slug]/actions.ts) is the real boundary; this is
+             the explanation, so an owner is not left wondering why the grid
+             does not respond. */
+          <span className="text-sm text-[var(--ink-soft)]">
+            Owner and admin accounts can&rsquo;t book courts. To hold time on your own courts, use
+            Bookings in your dashboard.
+          </span>
+        ) : !selection ? (
           <span className="text-sm text-[var(--ink-soft)]">
             Select open slots in one court&rsquo;s column to book.
           </span>

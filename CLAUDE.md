@@ -30,8 +30,11 @@ courts across branches, and admins moderate listings. Bookings are paid online
   interface; Resend for email.
 - Data access is **server-only** — the browser never queries Postgres. All reads
   and writes go through Server Components, Server Actions, and Route Handlers,
-  each guarded by `requireUser` / `requireOwnerOf` / `requireAdmin`. TypeScript
-  is the security boundary.
+  each guarded by `requireUser` / `requireOwnerOf` / `requireAdmin` /
+  `requirePlayer` / `requireBranchAccess`; `src/lib/staff/access.ts`'s
+  `loadDashboardAccess`/`branchIdsWith` scoping layer is the backbone of every
+  `/dashboard` page, resolving a session to the exact branches and permissions
+  each query may use. TypeScript is the security boundary.
 - RLS is **enabled on every table with zero policies** (deny-by-default), because
   the public anon key ships in the browser and must not reach any table. Do NOT
   add policies without reason, and do NOT use `force row level security` — it

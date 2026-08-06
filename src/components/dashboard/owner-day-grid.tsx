@@ -10,6 +10,12 @@ import type { OwnerGridBooking, OwnerGridCourt } from '@/lib/owner/queries'
  * Overloading one component with both would tangle the booking path with a
  * reporting view.
  *
+ * Also renders `blocked` rows alongside bookings — a maintenance block or
+ * walk-in occupies a slot exactly like a booking does, and the grid would
+ * lie about what's free if it dropped them. Distinguished from a real
+ * booking by `isBlock`. Deliberately read-only: the unblock control lives on
+ * /dashboard/bookings, where a table row has room for it.
+ *
  * Per branding.md's mobile rule, the table scrolls inside its own container
  * with a sticky first column; the page itself never scrolls sideways.
  */
@@ -73,8 +79,23 @@ export function OwnerDayGrid({
                 return (
                   <td key={court.courtId} className="px-1.5 py-1">
                     {booking ? (
-                      <div className="truncate rounded-[8px] bg-[var(--court-deep)] px-2.5 py-1.5 text-[12px] font-semibold text-white">
-                        {booking.playerName}
+                      /* Blocks read differently from bookings on purpose: a
+                         soft --band-off chip (the mockup's .cell-fill look)
+                         versus a solid --court-deep block. Same information
+                         density, immediately distinguishable at a glance, and
+                         no color outside branding.md's palette. Read-only —
+                         the unblock control lives on /dashboard/bookings,
+                         where a table row has room for it and a 30px grid
+                         cell does not. */
+                      <div
+                        title={booking.isBlock ? `Blocked — ${booking.label}` : booking.label}
+                        className={`truncate rounded-[8px] px-2.5 py-1.5 text-[12px] font-semibold ${
+                          booking.isBlock
+                            ? 'font-mono bg-[var(--band-off)] text-[var(--court-deep)]'
+                            : 'bg-[var(--court-deep)] text-white'
+                        }`}
+                      >
+                        {booking.label}
                       </div>
                     ) : (
                       <div className="h-[30px] rounded-[8px] bg-[var(--surface)]" />

@@ -2,6 +2,7 @@ import 'server-only'
 
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
+import { PG_UNIQUE_VIOLATION, sqlStateOf } from '@/lib/db/sql-state'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_BODY_LENGTH = 2000
@@ -55,14 +56,9 @@ export async function insertReviewIfEligible(input: ReviewInput & { playerId: st
     return result.rows.length > 0 ? { ok: true } : { ok: false, reason: 'not_eligible' }
   } catch (error) {
     // reviews.booking_id is UNIQUE; the constraint is the authority on
-    // "one review per booking", so a duplicate is a normal outcome to report.
-    // drizzle-orm wraps the PostgreSQL error in a cause property.
-    const pgError = (error as { cause?: unknown }).cause || error
-    if (
-      typeof pgError === 'object' &&
-      pgError !== null &&
-      (pgError as { code?: string }).code === '23505'
-    ) {
+    // "one review per booking", so a duplicate is a normal outcome to report
+    // rather than an exception to propagate.
+    if (sqlStateOf(error) === PG_UNIQUE_VIOLATION) {
       return { ok: false, reason: 'already_reviewed' }
     }
     throw error
