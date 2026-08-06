@@ -39,6 +39,7 @@ export type ListingBranchSummary = {
   city: string
   slug: string
   photoCount: number
+  coverPhotoPath: string | null
   courtCounts: Record<CourtStatus, number>
 }
 
@@ -105,6 +106,8 @@ export async function getListingBranches(branchIds: string[]): Promise<ListingBr
   const result = await db.execute(sql`
     select b.id, b.name, b.city, b.slug,
       (select count(*)::int from branch_photos p where p.branch_id = b.id) as photo_count,
+      (select p.storage_path from branch_photos p where p.branch_id = b.id
+        order by p.sort_order, p.id limit 1) as cover_photo_path,
       (select count(*)::int from courts c where c.branch_id = b.id and c.status = 'pending') as pending_count,
       (select count(*)::int from courts c where c.branch_id = b.id and c.status = 'approved') as approved_count,
       (select count(*)::int from courts c where c.branch_id = b.id and c.status = 'rejected') as rejected_count,
@@ -120,6 +123,7 @@ export async function getListingBranches(branchIds: string[]): Promise<ListingBr
     city: row.city as string,
     slug: row.slug as string,
     photoCount: Number(row.photo_count),
+    coverPhotoPath: (row.cover_photo_path as string | null) ?? null,
     courtCounts: {
       pending: Number(row.pending_count),
       approved: Number(row.approved_count),

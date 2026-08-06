@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Wordmark } from '@/components/site/wordmark'
+import { SideNav } from '@/components/dashboard/side-nav'
 import { signOutAction } from '@/app/auth/sign-out/actions'
 import { requireAdminPage } from '@/lib/auth/page-guards'
 import { getPendingCourtCount } from '@/lib/admin/queries'
@@ -49,22 +50,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </span>
         </div>
 
-        <nav className="flex flex-col gap-1 max-[980px]:flex-row max-[980px]:overflow-x-auto">
-          {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-2 rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium whitespace-nowrap text-[var(--ink)] hover:bg-[var(--surface)] ${FOCUS_RING}`}
-            >
-              {item.label}
-              {item.badge > 0 && (
-                <span className="font-mono ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--ink)] px-1.5 text-[11px] font-semibold text-[var(--ball)]">
-                  {item.badge}
-                </span>
-              )}
-            </Link>
-          ))}
-        </nav>
+        <SideNav items={items} />
 
         <div className="mt-auto flex flex-col gap-3 max-[980px]:mt-0">
           <div className="min-w-0">

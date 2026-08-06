@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Wordmark } from '@/components/site/wordmark'
+import { SideNav } from '@/components/dashboard/side-nav'
 import { requireDashboardPage } from '@/lib/auth/page-guards'
 import { signOutAction } from '@/app/auth/sign-out/actions'
 import { branchIdsWith } from '@/lib/staff/access'
@@ -29,11 +30,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // permission on at least one branch (branch_staff_some_permission
   // guarantees it), and the overview degrades to the empty state otherwise.
   //
-  // The mockup also lists Reviews and Settings; those are later slices, and a
-  // nav item pointing at a 404 is worse than no item.
+  // Settings is owner-only: brand identity is not branch-shaped, so there is
+  // no staff permission that opens it. The page re-asserts this inline and
+  // every settings action re-asserts requireOwner.
   const items = [
     { href: '/dashboard', label: 'Overview', show: true },
-    { href: '/dashboard/bookings', label: 'Bookings', show: access.can.view_bookings },
+    {
+      href: '/dashboard/bookings',
+      label: 'Bookings',
+      // Matches the page's own admission test exactly (src/app/dashboard/
+      // bookings/page.tsx): owners always, even with zero branches, plus
+      // staff holding view_bookings OR block_slots somewhere -- a bare
+      // access.can.view_bookings missed a block_slots-only front-desk grant.
+      show:
+        access.isOwner ||
+        branchIdsWith(access, 'view_bookings').length > 0 ||
+        branchIdsWith(access, 'block_slots').length > 0,
+    },
     {
       href: '/dashboard/listings',
       label: 'Branches & courts',
@@ -48,7 +61,19 @@ export default async function DashboardLayout({ children }: { children: React.Re
       show: access.isOwner || branchIdsWith(access, 'manage_courts').length > 0,
     },
     { href: '/dashboard/earnings', label: 'Earnings', show: access.can.view_earnings },
+    {
+      href: '/dashboard/reviews',
+      label: 'Reviews',
+      // Gated exactly like Branches & courts, on the same permission the
+      // Bookings item uses: owners always (an owner with no branches sees the
+      // empty state, which is the honest answer), staff only where a
+      // view_bookings grant actually exists. branchIdsWith, not
+      // access.can.view_bookings, so the item and the page's contents answer
+      // the same question.
+      show: access.isOwner || branchIdsWith(access, 'view_bookings').length > 0,
+    },
     { href: '/dashboard/staff', label: 'Staff', show: access.isOwner },
+    { href: '/dashboard/settings', label: 'Settings', show: access.isOwner },
   ].filter((item) => item.show)
 
   return (
@@ -57,17 +82,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <Link href="/" className={`text-[20px] text-[var(--ink)] ${FOCUS_RING}`}>
           <Wordmark />
         </Link>
-        <nav className="flex flex-col gap-1 max-[980px]:flex-row max-[980px]:overflow-x-auto">
-          {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium whitespace-nowrap text-[var(--ink)] hover:bg-[var(--surface)] ${FOCUS_RING}`}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <SideNav items={items} />
         <div className="mt-auto flex flex-col gap-3 max-[980px]:mt-0">
           <div className="flex items-center gap-2.5">
             <span

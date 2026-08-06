@@ -112,12 +112,18 @@ const SCHEDULE_ROW = sql`bk.status in ('confirmed', 'completed', 'blocked')`
  * `nullif(btrim(...), '')` so a whitespace-only note falls through to
  * 'Blocked' instead of rendering an empty cell. For a paid booking the
  * profiles row is always present, so the note/'Blocked' tail is unreachable.
+ *
+ * btrim's default trim set is a plain space only, so a note that is
+ * whitespace but not solely spaces (e.g. a tab or newline) would survive
+ * trimming and fail to collapse to null. Trim the full whitespace class
+ * explicitly (these are literal control characters in this JS template
+ * literal, not a Postgres E'' escape string).
  */
 const SCHEDULE_LABEL = sql`
   coalesce(
     pr.full_name,
     split_part(pr.email, '@', 1),
-    nullif(btrim(bk.note), ''),
+    nullif(btrim(bk.note, ' \t\n\r\v\f'), ''),
     'Blocked'
   )
 `

@@ -12,6 +12,8 @@ import { loadBranchDay } from '@/lib/booking/availability'
 import { getOptionalUser } from '@/lib/auth/guards'
 import { isValidCalendarDate, manilaToday, shiftDay } from '@/lib/date-manila'
 import { formatDateLabel, formatPriceFrom } from '@/lib/format'
+import { photoUrl } from '@/lib/photos'
+import { LOGO_BUCKET } from '@/lib/owner/settings'
 
 // Colors/tokens reference the brand CSS variables in src/app/globals.css
 // (mirroring design/branding.md, the design source of truth): --surface for
@@ -81,6 +83,7 @@ export default async function BranchPage(props: {
   // dynamic-rendering cost that was not already paid.
   const viewer = await getOptionalUser()
   const canBook = viewer === null || viewer.role === 'player'
+  const ownerLogoUrl = photoUrl(LOGO_BUCKET, detail.owner.logoPath)
 
   return (
     <>
@@ -210,17 +213,32 @@ export default async function BranchPage(props: {
           className="flex flex-wrap items-center justify-between gap-4 rounded-[20px] border border-[var(--hairline)] bg-[var(--panel)] p-5"
         >
           <div className="flex items-center gap-3">
-            {/* No storage bucket exists for owner logos today (only
-                branch-photos/court-photos are provisioned — see
-                supabase/migrations/*_storage_and_cron.sql), so `logoPath`
-                cannot be resolved to a URL by `photoUrl()`; this always
-                renders the initial-letter badge rather than guess a bucket. */}
-            <span
-              aria-hidden
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--hairline)] bg-[var(--court)] text-sm font-semibold text-white"
-            >
-              {(detail.owner.businessName || 'O').charAt(0).toUpperCase()}
-            </span>
+            {/* Logo: owners can now upload one at /dashboard/settings, which
+                stores it in the EXISTING `branch-photos` bucket under
+                `logos/<ownerId>/` — see LOGO_BUCKET in
+                src/lib/owner/settings.ts for why that bucket and why no
+                migration was needed. An earlier version of this comment said
+                no bucket existed for owner logos and that a migration was
+                required; that was the state of the tree, not a constraint.
+                The initial-letter badge stays as the fallback for owners who
+                have not uploaded one. */}
+            {ownerLogoUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element -- the
+                 bucket is public and this is an already-sized upload; the
+                 same call src/app/owners/[slug]/page.tsx makes. */
+              <img
+                src={ownerLogoUrl}
+                alt={`${detail.owner.businessName || 'Court owner'} logo`}
+                className="h-11 w-11 shrink-0 rounded-full border border-[var(--hairline)] object-cover"
+              />
+            ) : (
+              <span
+                aria-hidden
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--hairline)] bg-[var(--court)] text-sm font-semibold text-white"
+              >
+                {(detail.owner.businessName || 'O').charAt(0).toUpperCase()}
+              </span>
+            )}
             <div>
               <p className="font-mono text-[11px] uppercase tracking-[.08em] text-[var(--ink-soft)]">
                 Hosted by

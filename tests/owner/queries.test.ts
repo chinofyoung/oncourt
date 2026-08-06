@@ -309,6 +309,27 @@ test('a whitespace-only note still falls back to "Blocked"', async () => {
   expect(overview.todaysBookings[0].label).toBe('Blocked')
 })
 
+test('a tab/newline-only note still falls back to "Blocked"', async () => {
+  // btrim(note) with no explicit character set trims only the space
+  // character, not tabs or newlines — the existing whitespace-only test above
+  // only seeds plain spaces and would pass even with that one-arg defect.
+  // This seeds a note that is whitespace but NOT solely spaces, which the
+  // one-arg btrim leaves as "\n\t" instead of collapsing to null.
+  const mine = await seedBranchWithCourts(1)
+  const today = manilaToday()
+
+  await seedBlock({
+    courtId: mine.courtIds[0],
+    branchId: mine.branchId,
+    createdBy: mine.ownerId,
+    startsAt: manilaAt(today, 15),
+    note: '   \n\t ',
+  })
+
+  const overview = await getOwnerOverview([mine.branchId], today)
+  expect(overview.todaysBookings[0].label).toBe('Blocked')
+})
+
 test('blocks are excluded from gross, net, the weekly booking count, and occupancy', async () => {
   // The status story: SCHEDULE_ROW for the grid, REAL_BOOKING for every number
   // beside it. A resurfacing block reading as revenue or as occupancy would be

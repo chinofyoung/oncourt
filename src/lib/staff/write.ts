@@ -15,7 +15,13 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 /** Matches the slug shape used everywhere else in this app (branches.slug, /owners/<slug>). */
 const SLUG_RE = /^[a-z0-9-]+$/
-const MAX_BUSINESS_NAME_LENGTH = 120
+/**
+ * The one authority on how long a business name may be. Exported since the
+ * owner-settings slice: /dashboard/settings edits the same column, and a second
+ * constant would eventually disagree with this one — an owner would find a name
+ * the promote screen accepted and the settings page refused.
+ */
+export const MAX_BUSINESS_NAME_LENGTH = 120
 
 /**
  * Exported for tests; src/app/dashboard/staff/actions.ts is the only production

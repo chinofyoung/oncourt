@@ -50,7 +50,11 @@ export default async function OwnerBookingsPage({
   // BOTH empty is turned away, same as before.
   const scheduleBranchIds = branchIdsWith(access, 'view_bookings')
   const blockBranchIds = branchIdsWith(access, 'block_slots')
-  if (scheduleBranchIds.length === 0 && blockBranchIds.length === 0) redirect('/dashboard')
+  // `!access.isOwner &&` deliberately, same reasoning as the reviews page: an
+  // owner with zero branches still sees this page's own empty states.
+  if (!access.isOwner && scheduleBranchIds.length === 0 && blockBranchIds.length === 0) {
+    redirect('/dashboard')
+  }
 
   // An invalid or nonexistent date (?day=2026-02-30) falls back to today
   // rather than reaching a ::date cast and raising 22008.

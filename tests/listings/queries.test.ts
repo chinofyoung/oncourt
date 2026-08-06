@@ -40,6 +40,20 @@ test('getListingBranches counts courts by status and photos per branch', async (
   })
 })
 
+test('getListingBranches returns the lowest-sort_order photo path as coverPhotoPath, or null with no photos', async () => {
+  const { branchId: withPhotos } = await seedBranchWithCourts(1)
+  const { branchId: withoutPhotos } = await seedBranchWithCourts(1)
+  // Deliberately inserted out of order so the ORDER BY is doing real work.
+  await addBranchPhoto(withPhotos, `branches/${withPhotos}/second.jpg`, 1)
+  await addBranchPhoto(withPhotos, `branches/${withPhotos}/first.jpg`, 0)
+
+  const rows = await getListingBranches([withPhotos, withoutPhotos])
+  const withCover = rows.find((row) => row.id === withPhotos)
+  const withoutCover = rows.find((row) => row.id === withoutPhotos)
+  expect(withCover!.coverPhotoPath).toBe(`branches/${withPhotos}/first.jpg`)
+  expect(withoutCover!.coverPhotoPath).toBeNull()
+})
+
 test('getListingBranches returns nothing for an empty scope', async () => {
   // An empty array serializes to the Postgres empty array, so
   // `= any ('{}'::uuid[])` matches nothing — the correct answer for a staff
