@@ -22,3 +22,22 @@ export function photoUrl(
   if (!base) throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set')
   return `${base.replace(/\/$/, '')}/storage/v1/object/public/${bucket}/${storagePath}`
 }
+
+/**
+ * Upload rules, kept HERE rather than in src/lib/listings/photos.ts because
+ * this module is pure and that one is `server-only`: the file input's
+ * `accept` attribute and the "up to 5 MB" hint are rendered by a client
+ * component, which cannot import a server-only module without throwing at
+ * runtime. The server-side check is still the real one — an `accept`
+ * attribute is a browser hint a hand-crafted POST ignores entirely.
+ */
+export const MAX_PHOTO_BYTES = 5 * 1024 * 1024
+
+export const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
+
+/** MIME type -> the extension the stored object gets. Keys match ALLOWED_PHOTO_TYPES. */
+export const PHOTO_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+}

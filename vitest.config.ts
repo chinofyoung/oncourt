@@ -29,7 +29,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
-    // DB tests share one local Postgres; parallel files cause cross-talk.
+    // Hosted Supabase tests over Supavisor session pooler routinely exceed the 5s default.
+    testTimeout: 20000,
+    // Parallel files cause cross-talk over the shared database connection.
     fileParallelism: false,
   },
 })

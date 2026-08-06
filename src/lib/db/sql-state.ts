@@ -22,6 +22,12 @@ export function sqlStateOf(error: unknown): string | undefined {
 
 export const PG_UNIQUE_VIOLATION = '23505'
 export const PG_CHECK_VIOLATION = '23514'
+/**
+ * A referenced row does not exist (or a referencing row still does). Raised
+ * here when a court is inserted against a branch that was deleted between the
+ * guard and the write — a normal outcome to report, not an exception.
+ */
+export const PG_FOREIGN_KEY_VIOLATION = '23503'
 export const PG_EXCLUSION_VIOLATION = '23P01'
 /**
  * Two overlapping requests can form a genuine wait-for cycle the deadlock

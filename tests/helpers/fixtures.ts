@@ -46,6 +46,24 @@ export async function seedOwner(): Promise<string> {
   return id
 }
 
+/**
+ * A player promoted to admin, by the same one-line role flip seedOwner() uses.
+ *
+ * Extracted for the same reason seedOwner() was: tests/auth/guards.test.ts has
+ * its own private copy (it seeds auth.users directly and cannot use this
+ * module), and tests/staff/write.test.ts had this exact two-step inline. The
+ * admin surface needs an admin session in three more files.
+ *
+ * Sets ONLY the role. business_name/slug stay null — an admin is not an owner
+ * and has no business identity, and filling those in would hide a query that
+ * depends on them.
+ */
+export async function seedAdmin(): Promise<string> {
+  const id = await seedPlayer()
+  await db.execute(sql`update profiles set role = 'admin' where id = ${id}::uuid`)
+  return id
+}
+
 export async function seedBranchWithCourts(courtCount = 2) {
   const ownerId = await seedOwner()
 

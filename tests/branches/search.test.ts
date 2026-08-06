@@ -461,6 +461,49 @@ describe('searchBranches', () => {
     expect(mine.lat).toBeCloseTo(origin.lat, 3)
   })
 
+  /**
+   * Negative-fixture pin for the `c.status = 'approved'` predicate itself
+   * (final review finding): every fixture in this file seeds only approved
+   * courts, so nothing here would fail if that predicate were deleted
+   * entirely from `approvedPricedCourtsCte`. This seeds a branch with one
+   * approved court (via `seedBranchAt`, which already gives it a rate band
+   * and week-round operating hours) plus a pending and a suspended sibling
+   * court on the SAME branch, and asserts `courtCount` still reports 1 — not
+   * 3 — proving pending/rejected/suspended courts never inflate a public
+   * result even when they sit alongside a real approved court.
+   *
+   * Both siblings are given their own rate band (priced at the same
+   * 30000 centavos as the approved court's default). Without a rate band, a
+   * non-approved court would already be excluded from `branch_agg` by its
+   * null `min_price` alone (see `approvedPricedCourtsCte`'s
+   * `where ac.min_price is not null`), which would let this test pass even
+   * if the `c.status = 'approved'` predicate were deleted outright —
+   * confirmed by hand: with the predicate removed but no rate bands on the
+   * siblings, this test still reported courtCount 1. Pricing them closes
+   * that gap, so the assertion depends on the status filter itself.
+   */
+  it('counts only the approved court, not a pending or suspended sibling', async () => {
+    const origin = remoteOrigin()
+    const fixture = await seedBranchAt({ ...origin })
+    const siblings = await db.execute(sql`
+      insert into courts (branch_id, name, environment, status)
+      values
+        (${fixture.branchId}::uuid, 'Pending Court', 'indoor'::court_environment, 'pending'),
+        (${fixture.branchId}::uuid, 'Suspended Court', 'indoor'::court_environment, 'suspended')
+      returning id
+    `)
+    for (const row of siblings.rows) {
+      await db.execute(sql`
+        insert into court_rate_bands (court_id, start_hour, end_hour, price_centavos)
+        values (${row.id as string}::uuid, 7, 23, 30000)
+      `)
+    }
+
+    const results = await searchBranches({ ...origin, radiusMeters: 5000 })
+    const mine = results.find((r) => r.slug === fixture.slug)!
+    expect(mine.courtCount).toBe(1)
+  })
+
   it('excludes branches with no approved courts', async () => {
     const origin = remoteOrigin()
     const ownerId = await seedPlayer()

@@ -134,8 +134,8 @@ export default async function LoginPage({
 
           <p className="mt-8 border-t border-[var(--hairline)] pt-6 text-[13.5px] text-[var(--ink-soft)]">
             Own a court?{' '}
-            <span className="text-[var(--ink)]">Sign in with the same Google account</span> to list
-            it and manage your branches.
+            <span className="text-[var(--ink)]">Sign in with your Google account</span>, then
+            contact us and we&rsquo;ll switch your account over to a court owner.
           </p>
         </div>
       </section>

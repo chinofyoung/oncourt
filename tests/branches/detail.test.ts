@@ -113,6 +113,42 @@ describe('getBranchDetail', () => {
     expect(detail.courtCount).toBe(1)
     expect(detail.minPriceCentavos).toBe(30000)
   })
+
+  /**
+   * Negative-fixture pin for `getBranchDetail`'s own `c.status = 'approved'`
+   * predicate (final review finding): no existing fixture in this file ever
+   * creates a non-approved court, so that predicate could be deleted
+   * outright and this suite would stay green. Adds a pending and a suspended
+   * sibling alongside the one approved, priced court `seedOwnerWithBranches`
+   * already seeds, and asserts `courtCount` still reports 1 — not 3.
+   *
+   * Both siblings get their own rate band. Without one, a non-approved
+   * court would already be excluded by the surrounding
+   * `where ac.min_price is not null` filter alone (its `min_price` would be
+   * null), which would let this test pass even with the status predicate
+   * deleted outright — verified by hand against this exact fixture shape in
+   * the sibling `searchBranches` test in tests/branches/search.test.ts.
+   * Pricing them closes that gap.
+   */
+  it('exposes only the approved court, not a pending or suspended sibling', async () => {
+    const { branchSlugs, branchIds } = await seedOwnerWithBranches(1)
+    const siblings = await db.execute(sql`
+      insert into courts (branch_id, name, environment, status)
+      values
+        (${branchIds[0]}::uuid, 'Pending Court', 'indoor', 'pending'),
+        (${branchIds[0]}::uuid, 'Suspended Court', 'indoor', 'suspended')
+      returning id
+    `)
+    for (const row of siblings.rows) {
+      await db.execute(sql`
+        insert into court_rate_bands (court_id, start_hour, end_hour, price_centavos)
+        values (${row.id as string}::uuid, 7, 23, 30000)
+      `)
+    }
+
+    const detail = (await getBranchDetail(branchSlugs[0]))!
+    expect(detail.courtCount).toBe(1)
+  })
 })
 
 describe('getOwnerProfile', () => {

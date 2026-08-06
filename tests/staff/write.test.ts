@@ -2,6 +2,7 @@ import { afterAll, expect, test } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
 import {
+  seedAdmin,
   seedBranchWithCourts,
   seedOwner,
   seedPlayer,
@@ -109,8 +110,7 @@ test('addBranchStaff refuses an owner and an admin as a target', async () => {
   // TypeScript check is the enforcement.
   const { branchId } = await seedBranchWithCourts(1)
   const ownerTarget = await seedOwner()
-  const adminTarget = await seedPlayer()
-  await db.execute(sql`update profiles set role = 'admin' where id = ${adminTarget}::uuid`)
+  const adminTarget = await seedAdmin()
 
   for (const target of [ownerTarget, adminTarget]) {
     await expect(

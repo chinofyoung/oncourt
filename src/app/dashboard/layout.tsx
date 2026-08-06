@@ -2,19 +2,18 @@ import Link from 'next/link'
 import { Wordmark } from '@/components/site/wordmark'
 import { requireDashboardPage } from '@/lib/auth/page-guards'
 import { signOutAction } from '@/app/auth/sign-out/actions'
+import { branchIdsWith } from '@/lib/staff/access'
 
 // Global Constraints (this plan) mandate a branded focus-visible ring on
 // every interactive element; the mockup this layout transcribes omits it.
 const FOCUS_RING =
-  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--court)] focus-visible:outline-offset-2'
+  'outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--court)] focus-visible:outline-offset-2'
 
 /**
  * Owner shell. The guard lives in the layout so every /dashboard/* page is
  * gated by construction rather than by each page remembering.
  *
- * Only implemented sections appear in the sidebar. The mockup also lists
- * Branches & courts, Reviews, and Settings; those are later slices, and a nav
- * item pointing at a 404 is worse than no item.
+ * Only implemented sections appear in the sidebar.
  */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const access = await requireDashboardPage('/dashboard')
@@ -29,9 +28,25 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // Overview is unconditional: everyone admitted here has at least one
   // permission on at least one branch (branch_staff_some_permission
   // guarantees it), and the overview degrades to the empty state otherwise.
+  //
+  // The mockup also lists Reviews and Settings; those are later slices, and a
+  // nav item pointing at a 404 is worse than no item.
   const items = [
     { href: '/dashboard', label: 'Overview', show: true },
     { href: '/dashboard/bookings', label: 'Bookings', show: access.can.view_bookings },
+    {
+      href: '/dashboard/listings',
+      label: 'Branches & courts',
+      // Owners always — an owner with no branches yet needs this item most of
+      // all, since it is where they add their first one. Staff only where a
+      // manage_courts grant actually exists: access.can.manage_courts would
+      // be the union across every branch they can see AT ALL, which is the
+      // right test for "should this item render" only because
+      // branchIdsWith is what the page then scopes its query by. Using
+      // branchIdsWith here too keeps the item and the page's contents
+      // answering the same question.
+      show: access.isOwner || branchIdsWith(access, 'manage_courts').length > 0,
+    },
     { href: '/dashboard/earnings', label: 'Earnings', show: access.can.view_earnings },
     { href: '/dashboard/staff', label: 'Staff', show: access.isOwner },
   ].filter((item) => item.show)

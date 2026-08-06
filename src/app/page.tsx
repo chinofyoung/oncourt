@@ -6,6 +6,8 @@ import { getHomeData } from '@/lib/branches/queries'
 import { CITIES, DEFAULT_CITY_SLUG } from '@/lib/geo/cities'
 import { manilaToday } from '@/lib/date-manila'
 import { formatHour } from '@/lib/format'
+import { getOptionalUser } from '@/lib/auth/guards'
+import { ownerCtaHref } from '@/lib/site/owner-cta'
 
 // Ported from design/mockups/home.html. Structure: overlay Nav inside a
 // relative hero (photo + solid rgba(6,20,13,.68) overlay per branding.md —
@@ -27,6 +29,11 @@ import { formatHour } from '@/lib/format'
 // the dark --court-deep panel, just not competing with the hero's lime.
 export default async function HomePage() {
   const { featured, cities, openNowCount } = await getHomeData()
+  // A second session read on this page (<Nav> does its own): one claims read
+  // and one indexed profiles lookup, so that the page's own owner CTA lands
+  // somewhere useful instead of on /login for an owner who is already signed
+  // in. App Router gives a Server Component no way to share <Nav>'s result.
+  const user = await getOptionalUser()
   const today = manilaToday()
 
   // getHomeData() already returns one row per named city (slug, name,
@@ -291,8 +298,12 @@ export default async function HomePage() {
         </section>
 
         <section
+          id="for-owners"
+          // The destination of every "List your court" link for a visitor who
+          // is not an owner. scroll-mt keeps the heading clear of the top edge
+          // when the browser jumps here.
+          className="scroll-mt-8 mt-[84px] flex flex-wrap items-center gap-8 rounded-[28px] bg-[var(--court-deep)] p-14 max-[980px]:p-8 max-[560px]:mt-16"
           aria-label="For court owners"
-          className="mt-[84px] flex flex-wrap items-center gap-8 rounded-[28px] bg-[var(--court-deep)] p-14 max-[980px]:p-8 max-[560px]:mt-16"
         >
           <div className="min-w-[300px] flex-1">
             <span className="font-mono mb-3 block text-[11px] tracking-[.14em] text-[var(--ball)] uppercase">
@@ -305,13 +316,17 @@ export default async function HomePage() {
               List every court and branch you run, set your own rates by time of day, and get
               bookings paid upfront. Free to list — we only earn when you do.
             </p>
+            <p className="mt-2 max-w-[500px] text-[13.5px] text-[#DCE9DC]/60">
+              Owner accounts are set up by our team. Sign in once with Google, then contact us and
+              we&rsquo;ll switch yours on.
+            </p>
           </div>
           {/* Not lime: the hero's "Find open courts" is already this page's one
               lime primary action, and branding.md forbids a second one in the
               same view. A light button reads as a strong CTA against this
               dark --court-deep panel without competing with the hero. */}
           <Link
-            href="/login"
+            href={ownerCtaHref(user?.role ?? null)}
             className="font-display inline-flex h-[var(--btn-h)] items-center rounded-[var(--btn-radius)] bg-[var(--surface)] px-[34px] text-[15.5px] font-bold text-[var(--ink)] transition-[filter,transform] duration-150 hover:brightness-[.97] active:scale-[.98] motion-reduce:transition-none max-[560px]:w-full max-[560px]:justify-center"
           >
             List your court

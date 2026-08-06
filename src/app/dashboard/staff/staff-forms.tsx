@@ -63,15 +63,6 @@ function PermissionCheckboxes({
           {STAFF_PERMISSION_LABELS[permission]}
         </label>
       ))}
-      {/* manage_courts has no effect yet — the courts slice that consults it
-          hasn't shipped. Kept as a real, saveable checkbox rather than removed
-          or disabled: the spec mandates all four permissions, and this line is
-          what keeps checking it from being silently misleading in the
-          meantime. */}
-      <p className="w-full basis-full text-[11.5px] text-[var(--ink-soft)]">
-        Court management arrives with the listings update — the permission is saved now and
-        applies then.
-      </p>
     </fieldset>
   )
 }

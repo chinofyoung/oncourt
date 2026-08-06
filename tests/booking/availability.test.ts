@@ -1,4 +1,6 @@
+import { sql } from 'drizzle-orm'
 import { expect, test } from 'vitest'
+import { db } from '@/db'
 import { buildAvailabilityGrid, loadBranchDay } from '@/lib/booking/availability'
 import { manilaHour, seedBlock, seedBranchWithCourts } from '../helpers/fixtures'
 
@@ -161,6 +163,28 @@ test('loadBranchDay returns one column per approved court on a multi-court branc
     expect(column.cells.find((c) => c.hour === 20)!.priceCentavos).toBe(36500)
     expect(column.cells.every((c) => c.state === 'open')).toBe(true)
   }
+})
+
+test('loadBranchDay grid contains only the approved court, not a pending or suspended sibling', async () => {
+  // Negative-fixture pin for the `c.status = 'approved'` predicate in
+  // loadBranchDay's own court query (final review finding): every existing
+  // fixture in this file seeds only approved courts via
+  // seedBranchWithCourts, so that predicate could be deleted outright and
+  // this suite would stay green. Adds a pending and a suspended sibling
+  // court to a one-approved-court branch and asserts the grid still has
+  // exactly one column, for the approved court only.
+  const { branchId, slug, courtIds } = await seedBranchWithCourts(1)
+  await db.execute(sql`
+    insert into courts (branch_id, name, environment, status)
+    values
+      (${branchId}::uuid, 'Pending Court', 'indoor', 'pending'),
+      (${branchId}::uuid, 'Suspended Court', 'indoor', 'suspended')
+  `)
+
+  const result = await loadBranchDay(slug, '2026-08-15') // a Saturday
+  expect(result).not.toBeNull()
+  expect(result!.grid).toHaveLength(1)
+  expect(result!.grid[0].courtId).toBe(courtIds[0])
 })
 
 test('loadBranchDay marks a blocked hour as booked, not open', async () => {

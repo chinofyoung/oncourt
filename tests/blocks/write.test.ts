@@ -9,9 +9,9 @@ import {
   seedPlayer,
   teardownFixtures,
 } from '../helpers/fixtures'
+import { branchIdOfCourt } from '@/lib/courts/lookup'
 import {
   branchIdOfBlock,
-  branchIdOfCourt,
   createBlock,
   deleteBlock,
   parseBlockId,

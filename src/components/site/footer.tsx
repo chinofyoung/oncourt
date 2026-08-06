@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { BRAND_NAME, Wordmark } from '@/components/site/wordmark'
+import { OWNER_CTA_ANCHOR } from '@/lib/site/owner-cta'
 
 /**
  * Ported from design/mockups/home.html's <footer> — light band (--surface
@@ -17,7 +18,11 @@ export function Footer() {
         <Link href="/search" className="text-[var(--ink-soft)] hover:text-[var(--ink)]">
           Find courts
         </Link>
-        <Link href="/login" className="text-[var(--ink-soft)] hover:text-[var(--ink)]">
+        {/* The anchor, not the session-aware destination <Nav> uses: this
+            footer renders on public pages that resolve no session at all, and
+            a claims read plus a profile lookup on every footer render to
+            relabel one link is not a trade worth making. */}
+        <Link href={OWNER_CTA_ANCHOR} className="text-[var(--ink-soft)] hover:text-[var(--ink)]">
           List your court
         </Link>
         <Link href="/help" className="text-[var(--ink-soft)] hover:text-[var(--ink)]">

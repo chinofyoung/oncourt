@@ -68,22 +68,6 @@ export function parseBlockId(formData: FormData): string | null {
 }
 
 /**
- * The court's real branch, read from the database.
- *
- * This is what makes the action's guard trustworthy. If the form supplied a
- * branchId, an attacker would choose one value for requireBranchAccess and the
- * write would use another — a confused deputy. Reading it here means the guard
- * and the write always refer to the same branch, and it is why createBlock has
- * no `invalid_branch` failure reason at all.
- */
-export async function branchIdOfCourt(courtId: string): Promise<string | null> {
-  const result = await db.execute(sql`
-    select branch_id from courts where id = ${courtId}::uuid
-  `)
-  return (result.rows[0]?.branch_id as string | undefined) ?? null
-}
-
-/**
  * The branch of a BLOCK, for the same reason as branchIdOfCourt.
  *
  * Filters `status = 'blocked'` here rather than in the delete: a caller that

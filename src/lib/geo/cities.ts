@@ -44,3 +44,20 @@ export function cityBySlug(slug: string | null | undefined): City {
     CITIES.find((city) => city.slug === DEFAULT_CITY_SLUG)!
   )
 }
+
+/**
+ * A city centroid looked up by its display NAME rather than its slug —
+ * `branches.city` is free text typed by an owner, not a slug.
+ *
+ * Used only to decide where the map pin editor opens when a branch has no
+ * pin yet. An unknown city (Cebu, Davao, anywhere outside the seeded list)
+ * falls back to the region-wide default, which is a starting view, not a
+ * claim about where the branch is — the owner drags the pin from there.
+ */
+export function cityCenterByName(name: string | null | undefined): City {
+  const normalized = (name ?? '').trim().toLowerCase()
+  return (
+    CITIES.find((city) => city.slug !== DEFAULT_CITY_SLUG && city.name.toLowerCase() === normalized) ??
+    cityBySlug(DEFAULT_CITY_SLUG)
+  )
+}

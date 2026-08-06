@@ -1,6 +1,7 @@
 'use client'
 
 import { formatPeso } from '@/lib/format'
+import { COURT_ENVIRONMENT_LABELS } from '@/lib/listings/fields'
 import { AMENITY_LABELS, AMENITY_SLUGS } from '@/components/ui/amenity-chip'
 import { selectClass, toggleActive, toggleBase, toggleInactive, useFilterParams } from './filter-controls'
 
@@ -35,7 +36,7 @@ export function FilterChips(props: {
             aria-pressed={environment === env}
             className={`${toggleBase} ${environment === env ? toggleActive : toggleInactive}`}
           >
-            {env === 'indoor' ? 'Indoor' : 'Outdoor'}
+            {COURT_ENVIRONMENT_LABELS[env]}
           </button>
         ))}
       </div>

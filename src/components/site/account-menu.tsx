@@ -29,8 +29,10 @@ const FOCUS_RING =
  * role="menu" would promise arrow-key semantics that then have to be built and
  * maintained. It is a disclosure (aria-expanded) over ordinary links.
  *
- * There is no Admin item. /admin/* does not exist yet in this slice, and an
- * item pointing at a 404 is worse than no item.
+ * An admin gets an Admin item ALONGSIDE the owner dashboard link, not instead
+ * of it: the two answer different questions ("my own branches" vs "everyone
+ * else's courts"), and /dashboard genuinely works for an admin — its queries
+ * filter on owner_id, so they see only what they own there.
  *
  * Item visibility is role-derived: an owner (or admin) loses "My bookings"
  * (they can never have one), and a player holding >= 1 branch_staff grant
@@ -75,6 +77,7 @@ export function AccountMenu({ user, onDark }: { user: AccountMenuUser; onDark: b
   // dashboard item at all — a plain player has no dashboard to go to, and an
   // item pointing somewhere that redirects straight back is worse than none.
   const dashboardLabel = isOwner ? 'Owner dashboard' : user.isStaff ? 'Venue dashboard' : null
+  const isAdmin = user.role === 'admin'
   const label = user.fullName ?? user.email
   const initial = (user.fullName ?? user.email).charAt(0).toUpperCase()
 
@@ -135,6 +138,16 @@ export function AccountMenu({ user, onDark }: { user: AccountMenuUser; onDark: b
               className={`${showBookings ? '' : 'mt-2 '}block rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium text-[var(--ink)] ${FOCUS_RING} hover:bg-[var(--surface)]`}
             >
               {dashboardLabel}
+            </Link>
+          )}
+
+          {isAdmin && (
+            <Link
+              href="/admin"
+              onClick={() => setOpen(false)}
+              className={`block rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium text-[var(--ink)] ${FOCUS_RING} hover:bg-[var(--surface)]`}
+            >
+              Admin
             </Link>
           )}
 

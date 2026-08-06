@@ -2,9 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { AuthError, requireBranchAccess, requireUser } from '@/lib/auth/guards'
+import { branchIdOfCourt } from '@/lib/courts/lookup'
 import {
   branchIdOfBlock,
-  branchIdOfCourt,
   createBlock,
   deleteBlock,
   parseBlockId,
