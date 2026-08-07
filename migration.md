@@ -1864,7 +1864,7 @@ commands go inside a running `claude` session.
 - [ ] The slug matches the repo's actual absolute path
 - [ ] Byte sizes match: `MEMORY.md` 822, `oncourt-authed-routes-unverifiable.md` 1370, `oncourt-hosted-db-test-flakes.md` 1349, `oncourt-sdd-no-commit-workflow.md` 1138, `subagents-inherit-delegation-rule.md` 1589, `oncourt-client-value-import-server-only-trap.md` 1594
 - [ ] Every link in `MEMORY.md` resolves to a file that exists in the same directory
-- [ ] A session in the repo surfaces the memory index (the four MEMORY.md entries appear in context)
+- [ ] A session in the repo surfaces the memory index (all five MEMORY.md entries appear in context)
 
 **Final smoke test**
 
