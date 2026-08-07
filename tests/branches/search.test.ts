@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import { db } from '@/db'
 import { searchBranches } from '@/lib/branches/queries'
-import { manilaHour, seedOwner, seedPlayer } from '../helpers/fixtures'
+import { manilaHour, seedBooking, seedOwner, seedPlayer } from '../helpers/fixtures'
 
 /**
  * A fresh, remote origin for one test's fixtures.
@@ -27,20 +27,60 @@ function remoteOrigin(): { lat: number; lng: number } {
   }
 }
 
+type CourtSpec = {
+  name?: string
+  environment?: 'indoor' | 'outdoor'
+  priceCentavos?: number
+  opensHour?: number
+  closesHour?: number
+  /**
+   * Rate bands as `[startHour, endHour)` pairs, defaulting to a single band
+   * covering the whole 7-23 window. Explicit pairs let a span test seed two
+   * ADJACENT bands (a span may legitimately cross the seam) or two bands with
+   * a GAP between them (the unpriced hour, which is not a bookable hour). The
+   * database enforces non-overlap via `court_rate_bands_no_overlap` but
+   * deliberately permits gaps — see the comment above that constraint in
+   * supabase/migrations/20260801063910_listings.sql.
+   */
+  rateBands?: [number, number][]
+}
+
+/**
+ * One approved court on an existing branch, with rate bands and all-week
+ * operating hours. Extracted from `seedBranchAt` so the "same court for the
+ * whole span" test can give a branch a SECOND court without hand-rolling the
+ * three inserts (and drifting from the shape every other fixture here uses).
+ */
+async function seedCourtOn(branchId: string, options: CourtSpec = {}): Promise<string> {
+  const court = await db.execute(sql`
+    insert into courts (branch_id, name, environment, status)
+    values (${branchId}::uuid, ${options.name ?? 'Court 1'},
+            ${options.environment ?? 'indoor'}::court_environment, 'approved')
+    returning id
+  `)
+  const courtId = court.rows[0].id as string
+
+  for (const [startHour, endHour] of options.rateBands ?? [[7, 23]]) {
+    await db.execute(sql`
+      insert into court_rate_bands (court_id, start_hour, end_hour, price_centavos)
+      values (${courtId}::uuid, ${startHour}, ${endHour}, ${options.priceCentavos ?? 30000})
+    `)
+  }
+  for (let day = 0; day <= 6; day++) {
+    await db.execute(sql`
+      insert into court_operating_hours (court_id, day_of_week, opens_hour, closes_hour)
+      values (${courtId}::uuid, ${day}, ${options.opensHour ?? 7}, ${options.closesHour ?? 23})
+    `)
+  }
+  return courtId
+}
+
 /**
  * A branch at an exact point with one approved court, given rate bands and
  * all-week operating hours. Returns ids so the test can assert on its own
  * rows only — this database is shared and full of other branches.
  */
-async function seedBranchAt(options: {
-  lat: number
-  lng: number
-  environment?: 'indoor' | 'outdoor'
-  priceCentavos?: number
-  amenities?: string[]
-  opensHour?: number
-  closesHour?: number
-}) {
+async function seedBranchAt(options: CourtSpec & { lat: number; lng: number; amenities?: string[] }) {
   const ownerId = await seedOwner()
   const slug = 'search-fixture-' + crypto.randomUUID()
   const branch = await db.execute(sql`
@@ -51,24 +91,7 @@ async function seedBranchAt(options: {
     returning id
   `)
   const branchId = branch.rows[0].id as string
-
-  const court = await db.execute(sql`
-    insert into courts (branch_id, name, environment, status)
-    values (${branchId}::uuid, 'Court 1', ${options.environment ?? 'indoor'}::court_environment, 'approved')
-    returning id
-  `)
-  const courtId = court.rows[0].id as string
-
-  await db.execute(sql`
-    insert into court_rate_bands (court_id, start_hour, end_hour, price_centavos)
-    values (${courtId}::uuid, 7, 23, ${options.priceCentavos ?? 30000})
-  `)
-  for (let day = 0; day <= 6; day++) {
-    await db.execute(sql`
-      insert into court_operating_hours (court_id, day_of_week, opens_hour, closes_hour)
-      values (${courtId}::uuid, ${day}, ${options.opensHour ?? 7}, ${options.closesHour ?? 23})
-    `)
-  }
+  const courtId = await seedCourtOn(branchId, options)
   return { ownerId, branchId, courtId, slug }
 }
 
@@ -378,6 +401,281 @@ describe('searchBranches', () => {
     })
     const slugs = results.map((r) => r.slug)
     expect(slugs).not.toContain(mixed.slug)
+  })
+
+  /**
+   * The `until` span filter.
+   *
+   * `until` is the EXCLUSIVE end of the requested span, so `hour: 18,
+   * until: 21` asks for hours 18, 19 and 20 on ONE court. Every test below
+   * seeds its own branches at a fresh remote origin, so a shared, persistent
+   * database can never make the assertions ambiguous.
+   *
+   * The single-hour tests above are the other half of this coverage: they pass
+   * `hour` with no `until` and must keep behaving exactly as they did before
+   * the span existed, since an absent `until` is just the degenerate span
+   * `[hour, hour + 1)`.
+   */
+  const SPAN_DATE = '2026-09-01'
+
+  it('qualifies for a sub-span the court is free for, but not for the full span', async () => {
+    const origin = remoteOrigin()
+    const fixture = await seedBranchAt({ ...origin })
+    await seedBooking({
+      courtId: fixture.courtId,
+      branchId: fixture.branchId,
+      playerId: await seedPlayer(),
+      startsAt: manilaHour(SPAN_DATE, 20),
+      status: 'confirmed',
+    })
+
+    // 18-20 is clear of the 20-21 booking.
+    const sub = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 18,
+      until: 20,
+    })
+    expect(sub.map((r) => r.slug)).toContain(fixture.slug)
+
+    // 18-21 runs into it, and a span is all-or-nothing.
+    const full = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 18,
+      until: 21,
+    })
+    expect(full.map((r) => r.slug)).not.toContain(fixture.slug)
+  })
+
+  /**
+   * THE assertion that pins "one single court for the whole span". Everything
+   * else in this block passes under a naive implementation that hoists the
+   * span conditions out to branch level ("some court is free for each hour");
+   * only this one fails, because the branch here genuinely has a free court
+   * for every hour of the span — just never the SAME one. Such a booking
+   * cannot be made as one session, so the branch must not be offered.
+   */
+  it('does not qualify when two different courts each cover only half the span', async () => {
+    const origin = remoteOrigin()
+    const split = await seedBranchAt({ ...origin })
+    const splitCourtB = await seedCourtOn(split.branchId, { name: 'Court 2' })
+    // Control: one court free across the entire span, so a failure here means
+    // the span filter over-excludes rather than that the fixtures are wrong.
+    const whole = await seedBranchAt({ ...origin })
+
+    const playerId = await seedPlayer()
+    // Court A takes the second half of 18-21, court B the first half. Each is
+    // free for the other half, and neither is free for all of it.
+    await seedBooking({
+      courtId: split.courtId,
+      branchId: split.branchId,
+      playerId,
+      startsAt: manilaHour(SPAN_DATE, 20),
+      hours: 1,
+      status: 'confirmed',
+    })
+    await seedBooking({
+      courtId: splitCourtB,
+      branchId: split.branchId,
+      playerId,
+      startsAt: manilaHour(SPAN_DATE, 18),
+      hours: 2,
+      status: 'confirmed',
+    })
+
+    const results = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 18,
+      until: 21,
+    })
+    const slugs = results.map((r) => r.slug)
+    expect(slugs).not.toContain(split.slug)
+    expect(slugs).toContain(whole.slug)
+
+    // …and each half of that same span IS satisfiable on its own, by a
+    // different court each time. This is what makes the exclusion above mean
+    // something: the branch is not simply busy, it has a free court for every
+    // hour of 18-21 — just never one free court for all of it.
+    const firstHalf = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 18,
+      until: 20,
+    })
+    expect(firstHalf.map((r) => r.slug)).toContain(split.slug)
+    const secondHalf = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 20,
+      until: 21,
+    })
+    expect(secondHalf.map((r) => r.slug)).toContain(split.slug)
+  })
+
+  it('qualifies for a span that crosses a rate-band seam', async () => {
+    // Two adjacent bands, no gap: every hour of 11-13 is priced, just not by
+    // the same band. A per-span `start_hour <= hour and end_hour > hour` test
+    // against a single band would wrongly reject this.
+    const origin = remoteOrigin()
+    const seam = await seedBranchAt({
+      ...origin,
+      rateBands: [
+        [7, 12],
+        [12, 23],
+      ],
+    })
+
+    const results = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 11,
+      until: 13,
+    })
+    expect(results.map((r) => r.slug)).toContain(seam.slug)
+  })
+
+  it('does not qualify for a span containing an unpriced hour', async () => {
+    // Bands 7-12 and 13-23 leave hour 12 unpriced. An unpriced hour is not a
+    // bookable hour (the rule buildAvailabilityGrid applies per cell), so a
+    // span straddling the gap must be rejected even though its first and last
+    // hours are both priced — the trap a single-band check falls straight into.
+    const origin = remoteOrigin()
+    const gapped = await seedBranchAt({
+      ...origin,
+      rateBands: [
+        [7, 12],
+        [13, 23],
+      ],
+    })
+
+    const across = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 11,
+      until: 14,
+    })
+    expect(across.map((r) => r.slug)).not.toContain(gapped.slug)
+
+    // Control: a span wholly inside the second band still qualifies, so the
+    // exclusion above is the gap and not the fixture.
+    const inside = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 13,
+      until: 15,
+    })
+    expect(inside.map((r) => r.slug)).toContain(gapped.slug)
+  })
+
+  it('does not qualify for a span running past closes_hour', async () => {
+    const origin = remoteOrigin()
+    const early = await seedBranchAt({ ...origin, opensHour: 7, closesHour: 20 })
+    const late = await seedBranchAt({ ...origin, opensHour: 7, closesHour: 23 })
+
+    const past = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 18,
+      until: 21,
+    })
+    const pastSlugs = past.map((r) => r.slug)
+    expect(pastSlugs).not.toContain(early.slug)
+    expect(pastSlugs).toContain(late.slug)
+
+    // closes_hour is exclusive, so a span ENDING exactly at it is still inside
+    // the operating window — the boundary the `closes_hour >= end` predicate
+    // has to get right.
+    const upToClose = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 18,
+      until: 20,
+    })
+    expect(upToClose.map((r) => r.slug)).toContain(early.slug)
+  })
+
+  it('excludes a branch whose only court has a live booking in the middle of the span', async () => {
+    const origin = remoteOrigin()
+    const free = await seedBranchAt({ ...origin })
+    const booked = await seedBranchAt({ ...origin })
+    const held = await seedBranchAt({ ...origin })
+    const stale = await seedBranchAt({ ...origin })
+
+    // Hour 19 sits strictly inside 18-21 — neither endpoint — so only a real
+    // overlap test over the whole span catches it.
+    await seedBooking({
+      courtId: booked.courtId,
+      branchId: booked.branchId,
+      playerId: await seedPlayer(),
+      startsAt: manilaHour(SPAN_DATE, 19),
+      status: 'confirmed',
+    })
+    await seedBooking({
+      courtId: held.courtId,
+      branchId: held.branchId,
+      playerId: await seedPlayer(),
+      startsAt: manilaHour(SPAN_DATE, 19),
+      status: 'pending_payment',
+      expiresAt: new Date(Date.now() + 900_000),
+    })
+    // An EXPIRED hold occupies nothing, expired-but-unswept included — the
+    // half of the status predicate the span must not quietly drop.
+    await seedBooking({
+      courtId: stale.courtId,
+      branchId: stale.branchId,
+      playerId: await seedPlayer(),
+      startsAt: manilaHour(SPAN_DATE, 19),
+      status: 'pending_payment',
+      expiresAt: new Date(Date.now() - 900_000),
+    })
+
+    const results = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 18,
+      until: 21,
+    })
+    const slugs = results.map((r) => r.slug)
+    expect(slugs).toContain(free.slug)
+    expect(slugs).not.toContain(booked.slug)
+    expect(slugs).not.toContain(held.slug)
+    expect(slugs).toContain(stale.slug)
+  })
+
+  it('treats an absent until as a one-hour span, ignoring the next hour', async () => {
+    // The regression guard for the default `end = hour + 1`: a booking at 19
+    // must not affect an 18-with-no-`until` search. If the span ever widened
+    // by accident, this branch would vanish from a single-hour result.
+    const origin = remoteOrigin()
+    const fixture = await seedBranchAt({ ...origin })
+    await seedBooking({
+      courtId: fixture.courtId,
+      branchId: fixture.branchId,
+      playerId: await seedPlayer(),
+      startsAt: manilaHour(SPAN_DATE, 19),
+      status: 'confirmed',
+    })
+
+    const results = await searchBranches({
+      ...origin,
+      radiusMeters: 5000,
+      date: SPAN_DATE,
+      hour: 18,
+    })
+    expect(results.map((r) => r.slug)).toContain(fixture.slug)
   })
 
   it('returns a null rating and zero count for a branch with no reviews', async () => {

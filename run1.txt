@@ -1,0 +1,63 @@
+﻿node.exe : (!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to 
+become the default in a future major version of Vite:
+At line:1 char:422
++ ... { "TSC CLEAN" }; & $n node_modules\vitest\vitest.mjs run 2>&1 | Out-F ...
++                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((!) Your Vite c...ersion of Vite::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` 
+in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.10 C:/Users/chino/Code/oncourt
+
+ ❯ tests/booking/hold.test.ts (14 tests | 1 failed) 35415ms
+   × creates a hold with an expiry from platform settings 2342ms
+ ❯ tests/schema/settings.test.ts (4 tests | 1 failed) 1555ms
+   × default fee config is 10 percent borne by the platform 451ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/booking/hold.test.ts > creates a hold with an expiry from platform settings
+AssertionError: expected 4.980766666666667 to be greater than 13
+ ❯ tests/booking/hold.test.ts:33:22
+     31|
+     32|   const minutesOut = (result.expiresAt.getTime() - Date.now()) / 60_000
+     33|   expect(minutesOut).toBeGreaterThan(13)
+       |                      ^
+     34|   expect(minutesOut).toBeLessThan(16)
+     35| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/schema/settings.test.ts > default fee config is 10 percent borne by the platform
+AssertionError: expected { …(4) } to deeply equal { …(4) }
+
+- Expected
++ Received
+
+  {
+    "default_platform_fee_mode": "percentage",
+    "default_platform_fee_value": 1000,
+    "default_processor_fee_bearer": "platform",
+-   "hold_duration_minutes": 15,
++   "hold_duration_minutes": 5,
+  }
+
+ ❯ tests/schema/settings.test.ts:20:24
+     18|     from platform_settings
+     19|   `)
+     20|   expect(rows.rows[0]).toEqual({
+       |                        ^
+     21|     default_platform_fee_mode: 'percentage',
+     22|     default_platform_fee_value: 1000, // basis points
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 49 passed (51)
+      Tests  2 failed | 683 passed (685)
+   Start at  22:45:16
+   Duration  707.72s (transform 1.05s, setup 887ms, import 18.83s, tests 677.60s, environment 7ms)
+

@@ -1,0 +1,18 @@
+﻿node.exe : (!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to 
+become the default in a future major version of Vite:
+At line:1 char:379
++ ... \libs\node.exe"; & $n node_modules\vitest\vitest.mjs run 2>&1 | Out-F ...
++                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((!) Your Vite c...ersion of Vite::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` 
+in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.10 C:/Users/chino/Code/oncourt
+
+ ❯ tests/booking/hold.test.ts (14 tests | 1 failed) 37466ms
+   × creates a hold with an expiry from platform settings 2641ms
+ ❯ tests/schema/settings.test.ts (4 tests | 1 failed) 1602ms
+   × default fee config is 10 percent borne by the platform 470ms

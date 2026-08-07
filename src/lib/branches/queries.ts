@@ -2,7 +2,7 @@ import 'server-only'
 import { sql, type SQL } from 'drizzle-orm'
 import { db } from '@/db'
 import { manilaWeekday } from '@/lib/date-manila'
-import { CITIES, CITY_SEARCH_RADIUS_METERS, DEFAULT_CITY_SLUG } from '@/lib/geo/cities'
+import { CITIES, CITY_SEARCH_RADIUS_METERS } from '@/lib/geo/cities'
 
 export type BranchSummary = {
   id: string
@@ -27,6 +27,13 @@ export type SearchFilters = {
   radiusMeters?: number
   date?: string
   hour?: number
+  /**
+   * Exclusive end of the requested span, so `hour: 14, until: 17` means hours
+   * 14, 15 and 16. Guaranteed by `parseSearchParams` to be an integer strictly
+   * greater than `hour` whenever it is present, and never present without
+   * `hour`. Absent means the single-hour span `[hour, hour + 1)`.
+   */
+  until?: number
   environment?: 'indoor' | 'outdoor'
   maxPriceCentavos?: number
   amenities?: string[]
@@ -120,9 +127,10 @@ function toSummary(row: Record<string, unknown>): BranchSummary {
  * scoped to that environment (an outdoor-filtered search reports the
  * cheapest *outdoor* court, not the branch's cheapest court overall) — see
  * `approved_courts`'s conditional `environmentFilter` fragment below.
- * `filters.hour` is deliberately NOT scoped into these aggregates; that
- * would require picking one court's price to show when several are open at
- * that hour, which is a separate product question.
+ * `filters.hour`/`filters.until` are deliberately NOT scoped into these
+ * aggregates; that would require picking one court's price to show when
+ * several are open across the requested span, which is a separate product
+ * question.
  */
 export async function searchBranches(filters: SearchFilters): Promise<BranchSummary[]> {
   const radius = filters.radiusMeters ?? DEFAULT_RADIUS_METERS
@@ -164,12 +172,32 @@ export async function searchBranches(filters: SearchFilters): Promise<BranchSumm
   if (filters.hour !== undefined && filters.date) {
     const weekday = manilaWeekday(filters.date)
     const hour = filters.hour
-    const slotStart = `${filters.date}T${String(hour).padStart(2, '0')}:00:00+08:00`
-    const slotEnd = `${filters.date}T${String(hour + 1).padStart(2, '0')}:00:00+08:00`
+    // `until` is the EXCLUSIVE end of the requested span, so `hour: 14,
+    // until: 17` means hours 14, 15 and 16. Its absence is the single-hour
+    // span [hour, hour + 1), which is why there is one code path here and not
+    // two: the single-hour search is just the degenerate span, and the
+    // predicate below reduces to the pre-`until` one for it exactly.
+    const end = filters.until ?? hour + 1
+    const spanStart = `${filters.date}T${String(hour).padStart(2, '0')}:00:00+08:00`
+    // `end` can be 24. Postgres reads 24:00:00 as midnight ending this day,
+    // which is exactly what `closes_hour <= 24` and `end_hour <= 24` mean
+    // elsewhere in this schema.
+    const spanEnd = `${filters.date}T${String(end).padStart(2, '0')}:00:00+08:00`
 
-    // Mirrors src/lib/booking/availability.ts's definition of a bookable
-    // slot exactly: within the operating window, covered by a rate band, and
-    // not occupied by a live booking (an expired hold occupies nothing).
+    // Mirrors src/lib/booking/availability.ts's definition of a bookable slot
+    // exactly, widened from one hour to the whole span: inside the operating
+    // window, priced by a rate band, and not occupied by a live booking (an
+    // expired hold occupies nothing).
+    //
+    // ALL THREE CONDITIONS LIVE INSIDE THE SAME PER-COURT `EXISTS`, AND THAT
+    // PLACEMENT IS LOAD-BEARING — it is the only thing that makes "one single
+    // court covers the whole span" true rather than "the branch has some court
+    // for each part of it". Hoisted out to branch level, a branch with court A
+    // free 2–3 PM and court B free 3–5 PM would satisfy a 2–5 PM search while
+    // being impossible to actually book as one session, which is the whole
+    // point of a range search. `c3` is bound once per court, so every hour of
+    // the span is judged against that one court's operating hours, that one
+    // court's rate bands, and that one court's bookings.
     conditions.push(sql`exists (
       select 1
       from courts c3
@@ -178,19 +206,43 @@ export async function searchBranches(filters: SearchFilters): Promise<BranchSumm
       where c3.branch_id = b.id
         and c3.status = 'approved'
         ${environmentFilter('c3')}
-        and oh.opens_hour <= ${hour} and oh.closes_hour > ${hour}
-        and exists (
-          select 1 from court_rate_bands rb
-          where rb.court_id = c3.id and rb.start_hour <= ${hour} and rb.end_hour > ${hour}
+        -- The operating window must ENCLOSE the span, not merely contain its
+        -- first hour: closes_hour is exclusive, so >= end is "open through the
+        -- last hour of the span". For a single-hour search this is exactly the
+        -- old closes_hour > hour, since end = hour + 1.
+        and oh.opens_hour <= ${hour} and oh.closes_hour >= ${end}
+        -- EVERY hour in [hour, end) must be priced; an unpriced hour is not a
+        -- bookable hour, the same rule buildAvailabilityGrid applies per cell.
+        -- Bands are per-court and non-overlapping (court_rate_bands_no_overlap)
+        -- but NOT required to be contiguous — the DB permits gaps, and the
+        -- "bands cover operating hours" rule lives in application code. So a
+        -- single "start_hour <= hour and end_hour > hour" test is not enough
+        -- for a multi-hour span: it would pass a span that starts inside a band
+        -- and then falls into an unpriced gap. This asks the inverse question
+        -- instead — is there any hour of the span no band covers — which is
+        -- correct both for a span straddling two adjacent bands (fine) and for
+        -- one containing a gap (not fine).
+        and not exists (
+          -- The ::int casts are required, not decorative: both bounds arrive as
+          -- untyped bind parameters, and generate_series is overloaded, so
+          -- Postgres cannot choose a candidate (42725) without them.
+          select 1 from generate_series(${hour}::int, ${end - 1}::int) as span_hour
+          where not exists (
+            select 1 from court_rate_bands rb
+            where rb.court_id = c3.id
+              and rb.start_hour <= span_hour and rb.end_hour > span_hour
+          )
         )
+        -- One overlap test over the whole span rather than per hour: tstzrange
+        -- '[)' overlap already catches a booking touching any part of it.
         and not exists (
           select 1 from bookings bk
           where bk.court_id = c3.id
-            and bk.slot && tstzrange(${slotStart}::timestamptz, ${slotEnd}::timestamptz, '[)')
+            and bk.slot && tstzrange(${spanStart}::timestamptz, ${spanEnd}::timestamptz, '[)')
             and (
               -- Matches src/lib/booking/availability.ts and
               -- bookings_no_overlap's predicate: a block takes the slot, so a
-              -- branch whose only court is blocked at this hour is not open.
+              -- branch whose only court is blocked inside the span is not open.
               bk.status in ('confirmed', 'completed', 'blocked')
               or (bk.status = 'pending_payment' and bk.expires_at > now())
             )
@@ -487,25 +539,32 @@ export async function getHomeData(): Promise<HomeData> {
 
   // Counts branches the SAME way `/search?city=<slug>` finds them — a radius
   // search around each city's centroid (see src/lib/geo/cities.ts) at the
-  // same 12,000m radius parseSearchParams uses for a non-default city — NOT
-  // a string `group by b.city`. A prior version grouped on the raw
+  // same CITY_SEARCH_RADIUS_METERS parseSearchParams uses for a named city —
+  // NOT a string `group by b.city`. A prior version grouped on the raw
   // `branches.city` column, which disagreed with the radius-based `/search`
-  // results by 3-10x (e.g. chip said "Makati (1)" while `/search?city=makati`
-  // actually returned 7 venues): `city` is a free-text column on `branches`,
-  // while `/search` only ever uses `city` to pick a lat/lng centroid for an
-  // `ST_DWithin` search, so a branch just outside the "Makati" string but
-  // within 12km of Makati's centroid (or vice versa) made the two numbers
-  // diverge. `DEFAULT_CITY_SLUG` ("All of Metro Manila") is excluded — it's
-  // a synthetic region-wide entry that never matches a real `branches.city`
-  // string, so it never appeared as its own chip anyway, and its 30,000m
-  // radius is a different number than every other city's 12,000m.
+  // results by 3-10x (a chip claiming one venue while the `/search` link
+  // beneath it returned seven): `city` is a free-text column on `branches`
+  // typed by an owner, while `/search` only ever uses the city param to pick a
+  // lat/lng centroid for an `ST_DWithin` search — so a branch whose `city`
+  // string doesn't match but whose location is inside the radius (or the
+  // reverse) made the chip and the page it links to disagree. Counting by
+  // radius here is what keeps them the same number.
+  //
+  // Wide-area entries (`radiusMeters` set — today just "All of the
+  // Philippines") are excluded, matching the "is a real city" test used
+  // throughout: they are picker fallbacks, not places, their centroid is open
+  // sea, and their radius is a different number from every real city's, so a
+  // chip counted at CITY_SEARCH_RADIUS_METERS would not match what clicking it
+  // returns. Note this filter must key off `radiusMeters`, NOT off
+  // `DEFAULT_CITY_SLUG`: the default is now Tacloban, a real city with real
+  // branches, and excluding it would empty the strip entirely.
   //
   // Built as one query (a `values` table of every named city, joined via
   // `ST_DWithin`) rather than one round-trip per city — `CITIES` is a fixed,
-  // hardcoded ~9-entry array (not user input), so inlining slug/name/lat/lng
-  // as query parameters via `sql.join` is safe and keeps this to a single
-  // round-trip regardless of how many cities are ever added to that table.
-  const namedCities = CITIES.filter((c) => c.slug !== DEFAULT_CITY_SLUG)
+  // hardcoded, hand-maintained table (not user input), so inlining
+  // slug/name/lat/lng as query parameters via `sql.join` is safe and keeps
+  // this to a single round-trip however many cities are added to it.
+  const namedCities = CITIES.filter((c) => c.radiusMeters === undefined)
   const cityValues = sql.join(
     namedCities.map(
       (c) => sql`(${c.slug}::text, ${c.name}::text, ${c.lat}::float8, ${c.lng}::float8)`,

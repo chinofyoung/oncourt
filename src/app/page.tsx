@@ -6,6 +6,7 @@ import { getHomeData } from '@/lib/branches/queries'
 import { CITIES, DEFAULT_CITY_SLUG } from '@/lib/geo/cities'
 import { manilaToday } from '@/lib/date-manila'
 import { formatHour } from '@/lib/format'
+import { HOUR_OPTIONS, endHourOptions } from '@/lib/search/hours'
 import { getOptionalUser } from '@/lib/auth/guards'
 import { ownerCtaHref } from '@/lib/site/owner-cta'
 
@@ -23,10 +24,10 @@ import { ownerCtaHref } from '@/lib/site/owner-cta'
 // home.html uses TWO lime buttons on one page — the hero's `.search-btn`
 // AND the owner-cta's `.cta-btn` both use `--ball`/`--ball-ink`. That
 // directly violates branding.md's Controls rule, "Never two lime buttons in
-// one view." The hero's "Find open courts" is this page's one primary
-// action, so the owner CTA below renders as a light button (--surface bg,
-// --ink text) instead of lime — still a clear, high-contrast CTA against
-// the dark --court-deep panel, just not competing with the hero's lime.
+// one view." The hero's "Search" is this page's one primary action, so the
+// owner CTA below renders as a light button (--surface bg, --ink text)
+// instead of lime — still a clear, high-contrast CTA against the dark
+// --court-deep panel, just not competing with the hero's lime.
 export default async function HomePage() {
   const { featured, cities, openNowCount } = await getHomeData()
   // A second session read on this page (<Nav> does its own): one claims read
@@ -43,15 +44,13 @@ export default async function HomePage() {
   // anymore, and a city with zero venues in radius simply has no row.
   const cityLinks = cities
 
-  // Generic search-filter hours, not derived from any one branch's actual
-  // operating hours -- the seed (supabase/seed.sql) writes two different
-  // ranges, not a single 7..24: the 9 public-demo branches (27 courts across
-  // Rally Republic, Dink Haus, The Kitchen MNL) open 7 and close 23 every
-  // day (seed.sql:224-226), while the legacy "smash-zone-marikina"
-  // verification branch (3 courts) is the exception, opening 11 and closing
-  // 24/midnight (seed.sql:84-86). This list spans 7..23 to match the common
-  // branches' full range.
-  const hourOptions = Array.from({ length: 17 }, (_, i) => i + 7)
+  // The Time field's start/end hour lists come from `@/lib/search/hours`,
+  // shared with `/search`'s float so the two search bars can't drift. This
+  // form is a plain GET form with no client state, so the end list is the
+  // unconditional one (`endHourOptions(undefined)` = 8 AM … midnight): a pair
+  // that isn't a real span is dropped by `parseSearchParams`, so no client
+  // validation here is load-bearing.
+  const endHours = endHourOptions(undefined)
 
   return (
     <>
@@ -89,7 +88,7 @@ export default async function HomePage() {
               aria-label="Search courts"
               className="mt-11 grid grid-cols-[1.25fr_1fr_1fr_auto] items-center gap-2 rounded-[20px] border border-white/[.18] bg-white/[.09] p-2 shadow-[0_24px_48px_rgba(6,20,13,.35)] backdrop-blur-[22px] max-[980px]:grid-cols-2 max-[980px]:gap-1.5"
             >
-              <div className="flex h-[var(--control-h)] flex-col justify-center rounded-[var(--btn-radius)] px-[22px] transition-colors hover:bg-white/[.07] max-[980px]:col-span-2">
+              <div className="flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] px-[22px] transition-colors hover:bg-white/[.07] max-[980px]:col-span-2">
                 <label
                   htmlFor="home-search-city"
                   className="font-mono text-[10px] tracking-[.14em] text-white/55 uppercase"
@@ -110,7 +109,7 @@ export default async function HomePage() {
                 </select>
               </div>
 
-              <div className="relative flex h-[var(--control-h)] flex-col justify-center rounded-[var(--btn-radius)] border-l border-white/[.18] px-[22px] transition-colors hover:bg-white/[.07] max-[980px]:border-l-0">
+              <div className="relative flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] border-l border-white/[.18] px-[22px] transition-colors hover:bg-white/[.07] max-[980px]:border-l-0 max-[560px]:col-span-2">
                 <label
                   htmlFor="home-search-date"
                   className="font-mono text-[10px] tracking-[.14em] text-white/55 uppercase"
@@ -127,35 +126,68 @@ export default async function HomePage() {
                 />
               </div>
 
-              <div className="relative flex h-[var(--control-h)] flex-col justify-center rounded-[var(--btn-radius)] border-l border-white/[.18] px-[22px] transition-colors hover:bg-white/[.07] max-[980px]:border-l-0">
+              {/* One Time field, two selects, spaced EN DASH between them —
+                  branding.md's `7 – 9 AM` convention. The dash is decorative
+                  (`aria-hidden`); the pairing is carried for assistive tech by
+                  the field's own <label> plus an explicit accessible name on
+                  each select. A fifth grid column was deliberately NOT added:
+                  the end select rides inside the existing Time cell, and both
+                  Date and Time go full width below 560px so two selects never
+                  have to share ~150px. `min-w-0` all the way down is what
+                  keeps the pair from forcing the form wider than the viewport
+                  — branding.md's Layout rule says the page never scrolls
+                  sideways. */}
+              <div className="relative flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] border-l border-white/[.18] px-[22px] transition-colors hover:bg-white/[.07] max-[980px]:border-l-0 max-[560px]:col-span-2">
                 <label
                   htmlFor="home-search-hour"
                   className="font-mono text-[10px] tracking-[.14em] text-white/55 uppercase"
                 >
                   Time
                 </label>
-                <select
-                  id="home-search-hour"
-                  name="hour"
-                  defaultValue=""
-                  className="[color-scheme:dark] bg-transparent text-[15.5px] font-semibold text-white outline-none"
-                >
-                  <option value="" className="text-[var(--ink)]">
-                    Any time
-                  </option>
-                  {hourOptions.map((hour) => (
-                    <option key={hour} value={hour} className="text-[var(--ink)]">
-                      {formatHour(hour)}
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <select
+                    id="home-search-hour"
+                    name="hour"
+                    defaultValue=""
+                    aria-label="Time from"
+                    className="[color-scheme:dark] min-w-0 flex-1 truncate bg-transparent text-[15.5px] font-semibold text-white outline-none"
+                  >
+                    <option value="" className="text-[var(--ink)]">
+                      Any time
                     </option>
-                  ))}
-                </select>
+                    {HOUR_OPTIONS.map((hour) => (
+                      <option key={hour} value={hour} className="text-[var(--ink)]">
+                        {formatHour(hour)}
+                      </option>
+                    ))}
+                  </select>
+                  <span aria-hidden className="text-[15.5px] text-white/55">
+                    &ndash;
+                  </span>
+                  <select
+                    id="home-search-until"
+                    name="until"
+                    defaultValue=""
+                    aria-label="Time until"
+                    className="[color-scheme:dark] min-w-0 flex-1 truncate bg-transparent text-[15.5px] font-semibold text-white outline-none"
+                  >
+                    <option value="" className="text-[var(--ink)]">
+                      &mdash;
+                    </option>
+                    {endHours.map((hour) => (
+                      <option key={hour} value={hour} className="text-[var(--ink)]">
+                        {formatHour(hour)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <button
                 type="submit"
                 className="font-display ml-2 inline-flex h-[var(--control-h)] items-center rounded-[var(--btn-radius)] bg-[var(--ball)] px-[30px] text-[15.5px] font-bold tracking-[-0.01em] text-[var(--ball-ink)] transition-[filter,transform] duration-150 hover:brightness-[1.06] active:scale-[.98] motion-reduce:transition-none max-[980px]:col-span-2 max-[980px]:mt-0.5 max-[980px]:ml-0 max-[980px]:justify-center"
               >
-                Find open courts
+                Search
               </button>
             </form>
           </div>
@@ -321,8 +353,8 @@ export default async function HomePage() {
               we&rsquo;ll switch yours on.
             </p>
           </div>
-          {/* Not lime: the hero's "Find open courts" is already this page's one
-              lime primary action, and branding.md forbids a second one in the
+          {/* Not lime: the hero's "Search" is already this page's one lime
+              primary action, and branding.md forbids a second one in the
               same view. A light button reads as a strong CTA against this
               dark --court-deep panel without competing with the hero. */}
           <Link

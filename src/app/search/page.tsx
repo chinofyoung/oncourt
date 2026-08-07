@@ -22,11 +22,11 @@ import { parseSearchParams } from '@/lib/search/params'
  * separate page regions, so the shared `activeId` lives in context instead of
  * in a component that would have had to wrap the entire page.
  *
- * Deliberate departures from the mockup, both because branding.md outranks it:
- * the filter chips keep `--btn-radius` rather than becoming 999px pills (pills
- * are for non-interactive badges), and the float carries no lime button
- * (nothing to submit — the fields write straight to the URL). See the
- * comments at those call sites.
+ * Deliberate departure from the mockup, because branding.md outranks it: the
+ * filter chips keep `--btn-radius` rather than becoming 999px pills (pills are
+ * for non-interactive badges). See the comment at that call site. The float
+ * does carry the mockup's lime button — the fields still write straight to the
+ * URL, so it re-runs the current query rather than submitting one.
  */
 export default async function SearchPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
@@ -57,6 +57,7 @@ export default async function SearchPage(props: {
         citySlug={parsed.citySlug}
         date={parsed.date}
         hour={parsed.hour}
+        until={parsed.until}
         usingCoords={parsed.usingCoords}
       />
 

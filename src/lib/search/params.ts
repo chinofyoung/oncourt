@@ -67,6 +67,26 @@ export function parseSearchParams(params: Record<string, string | string[] | und
   const hourRaw = numberOrNaN(one('hour'))
   const hour = Number.isInteger(hourRaw) && hourRaw >= 0 && hourRaw <= 23 ? hourRaw : undefined
 
+  /**
+   * The exclusive end of the requested span. `?hour=14&until=17` means 2-5 PM,
+   * i.e. hours 14, 15 and 16 — exclusive to match
+   * `court_operating_hours.closes_hour` and the `tstzrange(…, '[)')` bounds
+   * used throughout the booking code.
+   *
+   * All four conditions must hold or `until` is dropped, so a hand-edited URL
+   * can never produce a backwards or zero-width span: integer, within 1..24
+   * (24 = midnight, the latest an end bound can be), strictly greater than
+   * `hour`, and `hour` itself defined (an end with no start is meaningless).
+   * `numberOrNaN` handles the `Number('') === 0` trap documented above — the
+   * end <select>'s "—" option submits `until=`, which must read as absent,
+   * not as midnight-as-a-start.
+   */
+  const untilRaw = numberOrNaN(one('until'))
+  const until =
+    hour !== undefined && Number.isInteger(untilRaw) && untilRaw >= 1 && untilRaw <= 24 && untilRaw > hour
+      ? untilRaw
+      : undefined
+
   const envRaw = one('env')
   const environment: 'indoor' | 'outdoor' | undefined =
     envRaw === 'indoor' || envRaw === 'outdoor' ? envRaw : undefined
@@ -86,9 +106,19 @@ export function parseSearchParams(params: Record<string, string | string[] | und
   const filters: SearchFilters = {
     lat: hasCoords ? latRaw : city.lat,
     lng: hasCoords ? lngRaw : city.lng,
-    radiusMeters: hasCoords ? 15_000 : citySlug === DEFAULT_CITY_SLUG ? 30_000 : CITY_SEARCH_RADIUS_METERS,
+    /**
+     * The radius comes off the resolved city entry, NOT off "is this the
+     * default slug". That test used to work only because the default was the
+     * region-wide "All of Metro Manila" pseudo-city; the default is now
+     * `tacloban`, a real 12 km city, and the wide entry (`philippines`) is a
+     * deliberate second choice. Keying on the slug would now give the default
+     * an absurd radius and the nationwide option a 12 km one — exactly
+     * backwards. Don't restore the slug test; put `radiusMeters` on the city.
+     */
+    radiusMeters: hasCoords ? 15_000 : (city.radiusMeters ?? CITY_SEARCH_RADIUS_METERS),
     date,
     hour,
+    until,
     environment,
     maxPriceCentavos,
     amenities: amenities.length > 0 ? amenities : undefined,
@@ -100,6 +130,7 @@ export function parseSearchParams(params: Record<string, string | string[] | und
     citySlug,
     date,
     hour,
+    until,
     environment,
     maxPriceCentavos,
     amenities,

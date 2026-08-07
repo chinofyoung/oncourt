@@ -28,15 +28,26 @@ export function useFilterParams() {
     router.push(`${pathname}?${next.toString()}`)
   }
 
-  const setParam = (key: string, value: string | null) => {
+  /**
+   * Write several params in ONE navigation. Two back-to-back `setParam` calls
+   * cannot substitute: both build their `URLSearchParams` from the same
+   * render's `searchParams`, so the second push overwrites the first's change
+   * instead of accumulating it. The time-range field needs exactly this — it
+   * sets `hour` and clears a now-contradictory `until` in the same write.
+   */
+  const setParams = (entries: Record<string, string | null>) => {
     const next = new URLSearchParams(searchParams.toString())
-    if (value === null || value === '') {
-      next.delete(key)
-    } else {
-      next.set(key, value)
+    for (const [key, value] of Object.entries(entries)) {
+      if (value === null || value === '') {
+        next.delete(key)
+      } else {
+        next.set(key, value)
+      }
     }
     push(next)
   }
+
+  const setParam = (key: string, value: string | null) => setParams({ [key]: value })
 
   /**
    * Choosing a city explicitly takes precedence over a previously-set
@@ -71,7 +82,7 @@ export function useFilterParams() {
     setParam(key, Array.from(set).join(',') || null)
   }
 
-  return { setParam, setCity, setCoords, toggleInList }
+  return { setParam, setParams, setCity, setCoords, toggleInList }
 }
 
 /** Compact bordered select/field, per branding.md's Controls tokens. */

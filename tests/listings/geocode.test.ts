@@ -140,10 +140,16 @@ test('the cached geocoder normalizes case and whitespace, and caches misses too'
   expect(calls).toBe(1)
 })
 
-test('cityCenterByName finds a known city and falls back to Metro Manila', async () => {
+test('cityCenterByName finds a known city and otherwise falls back to the default city', async () => {
   // The pin editor has to start somewhere when a branch has no pin yet.
-  expect(cityCenterByName('Marikina')).toMatchObject({ slug: 'marikina' })
-  expect(cityCenterByName('  marikina ')).toMatchObject({ slug: 'marikina' })
-  expect(cityCenterByName('Cebu City')).toMatchObject({ slug: 'metro-manila' })
-  expect(cityCenterByName(null)).toMatchObject({ slug: 'metro-manila' })
+  expect(cityCenterByName('Tacloban City')).toMatchObject({ slug: 'tacloban' })
+  expect(cityCenterByName('  tacloban city ')).toMatchObject({ slug: 'tacloban' })
+  expect(cityCenterByName('Cebu City')).toMatchObject({ slug: 'tacloban' })
+  expect(cityCenterByName(null)).toMatchObject({ slug: 'tacloban' })
+  // A wide-area entry is not a city anyone types into an address form, and
+  // its centroid is open water in the Sibuyan Sea — a useless place to drop a
+  // pin. Matching on `name` alone would return it here, so this pins that
+  // `cityCenterByName` skips entries carrying their own `radiusMeters` and
+  // falls back to the default city instead.
+  expect(cityCenterByName('All of the Philippines')).toMatchObject({ slug: 'tacloban' })
 })
