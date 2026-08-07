@@ -89,6 +89,53 @@ function paidEventBody(overrides: {
   })
 }
 
+/**
+ * The body of a `GET /checkout_sessions/:id` response — the top-level
+ * `data` here is believed to be the SAME Checkout Session resource shape
+ * `paidEventBody` above embeds under `data.attributes.data`, per
+ * paymongo.ts's `paidPaymentFromSessionResource` (Task 8 confirms against a
+ * real response). `noPayments` models a response that is a well-formed
+ * checkout session but genuinely has no payment on it yet — the
+ * not-paid-yet case, distinct from a shape this reader cannot parse at all.
+ */
+function sessionResourceBody(overrides: {
+  sessionId?: string
+  paymentId?: string
+  amount?: unknown
+  status?: string
+  sourceType?: string
+  nest?: boolean
+  noPayments?: boolean
+} = {}) {
+  const payment = {
+    id: overrides.paymentId ?? 'pay_abc123',
+    type: 'payment',
+    attributes: {
+      amount: overrides.amount ?? 102281,
+      status: overrides.status ?? 'paid',
+      source: { type: overrides.sourceType ?? 'gcash' },
+    },
+  }
+  const sessionAttributes: Record<string, unknown> = {
+    checkout_url: 'https://checkout.paymongo.com/cs_abc',
+    status: 'active',
+  }
+  if (!overrides.noPayments) {
+    if (overrides.nest) {
+      sessionAttributes.payment_intent = { attributes: { payments: [payment] } }
+    } else {
+      sessionAttributes.payments = [payment]
+    }
+  }
+  return {
+    data: {
+      id: overrides.sessionId ?? 'cs_abc',
+      type: 'checkout_session',
+      attributes: sessionAttributes,
+    },
+  }
+}
+
 // Restored before every test because one test deletes it to prove the
 // call-site failure. Assigned directly rather than through vi.stubEnv: the
 // adapter reads process.env at call time, so there is nothing to stub.
@@ -243,6 +290,103 @@ test('createCheckoutSession fails loudly, and without calling the network, when 
       lineName: 'x', description: 'y', successUrl: 'a', cancelUrl: 'b',
     }),
   ).rejects.toBeInstanceOf(PaymentConfigError)
+  expect(fetchImpl).not.toHaveBeenCalled()
+})
+
+// ---------- retrieveSession ----------
+
+test('retrieveSession reads a paid session into the same PaidEvent shape parsePaidEvent produces', async () => {
+  const fetchImpl = fakeFetch({
+    body: sessionResourceBody({ sessionId: 'cs_abc', paymentId: 'pay_abc123', amount: 100_000 }),
+  })
+  const provider = createPaymongoProvider(fetchImpl as unknown as typeof fetch)
+
+  const event = await provider.retrieveSession('cs_abc')
+  expect(event).toMatchObject({
+    sessionId: 'cs_abc',
+    paymentId: 'pay_abc123',
+    amountCentavos: 100_000,
+    paymentMethod: 'gcash',
+  })
+
+  expect(fetchImpl).toHaveBeenCalledTimes(1)
+  const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+  expect(url).toBe(`${PAYMONGO_API_BASE}/checkout_sessions/cs_abc`)
+  expect(init.method).toBe('GET')
+  const headers = init.headers as Record<string, string>
+  // Same auth scheme as createCheckoutSession — secret key as the Basic
+  // username with an empty password.
+  expect(headers.Authorization).toBe(`Basic ${Buffer.from('sk_test_key:').toString('base64')}`)
+  // Same bound as createCheckoutSession, for the same reason: a hung
+  // PayMongo must not leave a poll waiting forever.
+  expect(init.signal).toBeInstanceOf(AbortSignal)
+})
+
+test('retrieveSession URL-encodes the session id', async () => {
+  const fetchImpl = fakeFetch({ body: sessionResourceBody() })
+  const provider = createPaymongoProvider(fetchImpl as unknown as typeof fetch)
+  await provider.retrieveSession('cs abc/../x')
+  const [url] = fetchImpl.mock.calls[0] as unknown as [string]
+  expect(url).toBe(`${PAYMONGO_API_BASE}/checkout_sessions/${encodeURIComponent('cs abc/../x')}`)
+})
+
+test('retrieveSession finds the payments array nested under payment_intent too', async () => {
+  const fetchImpl = fakeFetch({ body: sessionResourceBody({ nest: true }) })
+  const provider = createPaymongoProvider(fetchImpl as unknown as typeof fetch)
+  expect((await provider.retrieveSession('cs_abc'))?.paymentId).toBe('pay_abc123')
+})
+
+test('retrieveSession returns null, never a guess, for a session with no paid payment yet', async () => {
+  const fetchImpl = fakeFetch({ body: sessionResourceBody({ noPayments: true }) })
+  const provider = createPaymongoProvider(fetchImpl as unknown as typeof fetch)
+  expect(await provider.retrieveSession('cs_abc')).toBeNull()
+})
+
+test('retrieveSession returns null for a malformed/unexpected response body — same as parsePaidEvent', async () => {
+  for (const body of [{ data: {} }, {}, { data: { id: 'cs_abc', attributes: {} } }]) {
+    const provider = createPaymongoProvider(fakeFetch({ body }) as unknown as typeof fetch)
+    expect(await provider.retrieveSession('cs_abc'), JSON.stringify(body)).toBeNull()
+  }
+})
+
+test('retrieveSession throws PaymentProviderError on a non-2xx, carrying the status', async () => {
+  const provider = createPaymongoProvider(
+    fakeFetch({ ok: false, status: 404, body: { errors: [{ detail: 'not found' }] } }) as unknown as typeof fetch,
+  )
+  await expect(provider.retrieveSession('cs_missing')).rejects.toMatchObject({
+    name: 'PaymentProviderError',
+    status: 404,
+  })
+})
+
+test('retrieveSession throws PaymentProviderError when the request times out', async () => {
+  const provider = createPaymongoProvider(
+    fakeFetch({ throws: new DOMException('The operation timed out.', 'TimeoutError') }) as unknown as typeof fetch,
+  )
+  await expect(provider.retrieveSession('cs_abc')).rejects.toBeInstanceOf(PaymentProviderError)
+})
+
+test('retrieveSession throws PaymentProviderError, not a raw SyntaxError, when a 2xx body is unparsable', async () => {
+  const fetchImpl = vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => {
+      throw new SyntaxError('Unexpected end of JSON input')
+    },
+    text: async () => 'not json',
+  })) as unknown as typeof fetch
+  const provider = createPaymongoProvider(fetchImpl)
+  await expect(provider.retrieveSession('cs_abc')).rejects.toMatchObject({
+    name: 'PaymentProviderError',
+    status: 200,
+  })
+})
+
+test('retrieveSession fails loudly, and without calling the network, when the key is missing', async () => {
+  delete process.env.PAYMONGO_SECRET_KEY
+  const fetchImpl = fakeFetch({ body: sessionResourceBody() })
+  const provider = createPaymongoProvider(fetchImpl as unknown as typeof fetch)
+  await expect(provider.retrieveSession('cs_abc')).rejects.toBeInstanceOf(PaymentConfigError)
   expect(fetchImpl).not.toHaveBeenCalled()
 })
 

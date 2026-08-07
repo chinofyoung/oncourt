@@ -5,13 +5,21 @@
  * and court forms are client components that render the failure messages, and
  * nothing here touches a database or a session.
  *
- * The amenity vocabulary is IMPORTED, never redeclared. AMENITY_SLUGS in
- * src/components/ui/amenity-chip.tsx is the single source of truth already
+ * The CANONICAL amenity vocabulary is IMPORTED, never redeclared. AMENITY_SLUGS
+ * in src/components/ui/amenity-chip.tsx is the single source of truth already
  * shared by the search query-param whitelist (src/lib/search/params.ts) and
- * the filter chips; branches.amenities is a bare `text[]` with no constraint,
- * so a slug outside that list would be stored, rendered as a hyphen-stripped
- * fallback chip, and permanently unmatched by the search filter's
- * `b.amenities @> $` predicate.
+ * the filter chips.
+ *
+ * branches.amenities is a bare `text[]` with no DB constraint, and owners can
+ * add free-text custom amenities beyond the canonical list (there is no
+ * separate column or migration for them — see BranchFieldset's "Add" button).
+ * parseBranchFields below accepts an amenity two ways: a canonical value by
+ * VOCABULARY (must be in AMENITY_SLUGS, unlimited count since there are only
+ * ever that many distinct values), or anything else by SHAPE (trimmed,
+ * non-empty, bounded length, bounded count, no control characters). Search
+ * filtering stays canonical-only on purpose — a per-branch free-text amenity
+ * would be stored and rendered as a chip either way, but letting it into the
+ * `b.amenities @> $` predicate would make arbitrary user text a filter facet.
  */
 import { AMENITY_SLUGS } from '@/components/ui/amenity-chip'
 
@@ -68,6 +76,33 @@ export const MAX_SURFACE = 80
 /** branches.slug is UNIQUE and public; long enough to stay readable, short enough to type. */
 const MAX_SLUG = 60
 
+/**
+ * Owner-defined amenities beyond the canonical checkbox list ride the same
+ * `amenities` text[] as free text — no separate column, no migration (see the
+ * module comment above). These bound that free text:
+ *
+ * - MAX_CUSTOM_AMENITY_LENGTH: long enough for something like "Ball machine
+ *   rentals" (20 chars) with real headroom, short enough that a pill chip
+ *   stays on one line instead of wrapping the card layout.
+ * - MAX_CUSTOM_AMENITIES: caps how many free-text entries one branch can
+ *   accumulate, so a hand-crafted POST can't pad the array out to thousands
+ *   of entries. Canonical amenities need no equivalent count cap — there are
+ *   only ever AMENITY_SLUGS.length possible distinct values, and duplicates
+ *   (including a case-only duplicate of a canonical slug) are rejected below
+ *   regardless of which "kind" either entry is.
+ */
+export const MAX_CUSTOM_AMENITY_LENGTH = 40
+export const MAX_CUSTOM_AMENITIES = 12
+
+/**
+ * "No control characters" for a custom amenity: React already escapes text
+ * content, so this isn't guarding against injection — it's guarding against
+ * a stray tab/newline/DEL silently breaking a one-line pill chip's layout, or
+ * a hand-crafted POST stuffing binary-looking junk into a public-facing
+ * field. Covers the C0 range plus DEL.
+ */
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/
+
 /** Same deliberately-loose rule as src/lib/staff/write.ts — see that module's comment. */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -88,7 +123,8 @@ export const BRANCH_FIELDS_FAILURE_MESSAGES: Record<BranchFieldsFailure, string>
   missing_city: 'Enter the city.',
   too_long: 'One of those fields is too long — shorten it and try again.',
   invalid_email: "That contact email doesn't look right.",
-  invalid_amenity: 'Pick amenities from the list, without repeating one.',
+  invalid_amenity:
+    'Check the amenities — one may be blank, too long, repeated, or there are too many custom ones.',
   invalid_location:
     'Set the map pin somewhere in the Philippines, or leave it unset and place it later.',
 }
@@ -124,7 +160,7 @@ export function parseBranchFields(
   const description = text(formData, 'description')
   const contactPhone = text(formData, 'contactPhone')
   const contactEmail = text(formData, 'contactEmail')
-  const amenities = formData.getAll('amenities').map((value) => String(value))
+  const rawAmenities = formData.getAll('amenities').map((value) => String(value))
   const rawLat = text(formData, 'lat')
   const rawLng = text(formData, 'lng')
 
@@ -147,16 +183,37 @@ export function parseBranchFields(
     return { ok: false, reason: 'invalid_email' }
   }
 
-  for (const amenity of amenities) {
-    if (!(AMENITY_SLUGS as readonly string[]).includes(amenity)) {
-      return { ok: false, reason: 'invalid_amenity' }
+  // Each submitted amenity is either canonical (in AMENITY_SLUGS, unbounded
+  // count) or custom (validated by shape and counted against
+  // MAX_CUSTOM_AMENITIES). Blank/whitespace-only is rejected outright rather
+  // than silently dropped: an unchecked checkbox submits nothing at all, so
+  // an empty STRING reaching here only happens via a hand-crafted request.
+  //
+  // Dedup is case-insensitive and runs before the canonical/custom split, so
+  // it also catches a case-only duplicate of a canonical slug (e.g. the
+  // checkbox "parking" plus a hand-typed custom "Parking") — a duplicate is
+  // never something the real form can produce, since `amenities @>
+  // '{parking,parking}'` matches identically to a single "parking" and
+  // storing it twice would only double the rendered chip.
+  const seen = new Set<string>()
+  const amenities: string[] = []
+  let customCount = 0
+  for (const raw of rawAmenities) {
+    const value = raw.trim()
+    if (value.length === 0) return { ok: false, reason: 'invalid_amenity' }
+
+    const dedupeKey = value.toLowerCase()
+    if (seen.has(dedupeKey)) return { ok: false, reason: 'invalid_amenity' }
+    seen.add(dedupeKey)
+
+    const isCanonical = (AMENITY_SLUGS as readonly string[]).includes(value)
+    if (!isCanonical) {
+      if (value.length > MAX_CUSTOM_AMENITY_LENGTH) return { ok: false, reason: 'invalid_amenity' }
+      if (CONTROL_CHAR_RE.test(value)) return { ok: false, reason: 'invalid_amenity' }
+      customCount += 1
+      if (customCount > MAX_CUSTOM_AMENITIES) return { ok: false, reason: 'invalid_amenity' }
     }
-  }
-  // A duplicate is never something a checkbox set can produce; it means the
-  // POST was hand-crafted, and `amenities @> '{parking,parking}'` would still
-  // match, so storing it achieves nothing but a doubled chip.
-  if (new Set(amenities).size !== amenities.length) {
-    return { ok: false, reason: 'invalid_amenity' }
+    amenities.push(value)
   }
 
   // Both or neither. `branches.location` is nullable, so "no pin yet" is a

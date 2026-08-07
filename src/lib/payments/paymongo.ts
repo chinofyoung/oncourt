@@ -146,13 +146,17 @@ function asRecord(value: unknown): JsonRecord | null {
 }
 
 /**
- * Reads a `checkout_session.payment.paid` body into the provider-agnostic
- * PaidEvent, or null.
+ * The shared core of "read the paid payment out of a Checkout Session
+ * resource" — the `{id, attributes: {payments / payment_intent...}}` shape
+ * PayMongo publishes for BOTH the embedded resource under a
+ * `checkout_session.payment.paid` webhook event's `data.attributes.data`
+ * AND the top-level `data` of a `GET /checkout_sessions/:id` response
+ * (`retrieveSession` below). One reader for both, so a shape correction
+ * (Task 8) fixes both call sites at once instead of drifting apart.
  *
- * NULL IS ALWAYS THE ANSWER WHEN ANYTHING IS UNCERTAIN — a different event
- * type, a missing session id, no `paid` payment, a non-integer amount. The
- * handler turns null into "200 and ignore", which is the safe outcome; a
- * guessed number here would be a wrong booking confirmed for a wrong amount.
+ * NULL IS ALWAYS THE ANSWER WHEN ANYTHING IS UNCERTAIN — a missing session
+ * id, no `paid` payment in the array, a non-integer amount. A guessed number
+ * here would be a wrong booking confirmed for a wrong amount.
  *
  * The payments array is accepted at either documented location (ASSUMPTION:
  * PayMongo's current docs publish the Checkout Session resource, which
@@ -160,20 +164,14 @@ function asRecord(value: unknown): JsonRecord | null {
  * JSON of THIS event 404s in the fetched docs) — accepting both means a
  * documentation gap cannot become a dropped payment. Task 8 confirms the real
  * shape against a dashboard test event.
+ *
+ * Deliberately does NOT return `eventId`/`eventType`/`livemode`: those
+ * belong to the webhook envelope (or, for a direct retrieval, do not exist
+ * at all) — the caller supplies them.
  */
-export function parsePaymongoPaidEvent(rawBody: string): PaidEvent | null {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(rawBody)
-  } catch {
-    return null
-  }
-
-  const data = asRecord(asRecord(parsed)?.data)
-  const eventAttributes = asRecord(data?.attributes)
-  if (!eventAttributes || eventAttributes.type !== PAID_EVENT_TYPE) return null
-
-  const resource = asRecord(eventAttributes.data)
+function paidPaymentFromSessionResource(
+  resource: JsonRecord | null,
+): Pick<PaidEvent, 'sessionId' | 'paymentId' | 'amountCentavos' | 'paymentMethod'> | null {
   const sessionId = resource?.id
   const sessionAttributes = asRecord(resource?.attributes)
   if (typeof sessionId !== 'string' || sessionId.length === 0 || !sessionAttributes) return null
@@ -200,13 +198,42 @@ export function parsePaymongoPaidEvent(rawBody: string): PaidEvent | null {
   const mapped = typeof sourceType === 'string' ? METHOD_BY_PAYMONGO_TYPE[sourceType] : undefined
 
   return {
-    eventId: typeof data?.id === 'string' ? data.id : '',
-    eventType: PAID_EVENT_TYPE,
-    livemode: eventAttributes.livemode === true,
     sessionId,
     paymentId,
     amountCentavos: amount,
     paymentMethod: mapped !== undefined && isPaymentMethod(mapped) ? mapped : null,
+  }
+}
+
+/**
+ * Reads a `checkout_session.payment.paid` body into the provider-agnostic
+ * PaidEvent, or null.
+ *
+ * NULL IS ALWAYS THE ANSWER WHEN ANYTHING IS UNCERTAIN — a different event
+ * type, or anything `paidPaymentFromSessionResource` above could not read
+ * with certainty. The handler turns null into "200 and ignore", which is the
+ * safe outcome.
+ */
+export function parsePaymongoPaidEvent(rawBody: string): PaidEvent | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(rawBody)
+  } catch {
+    return null
+  }
+
+  const data = asRecord(asRecord(parsed)?.data)
+  const eventAttributes = asRecord(data?.attributes)
+  if (!eventAttributes || eventAttributes.type !== PAID_EVENT_TYPE) return null
+
+  const payment = paidPaymentFromSessionResource(asRecord(eventAttributes.data))
+  if (!payment) return null
+
+  return {
+    eventId: typeof data?.id === 'string' ? data.id : '',
+    eventType: PAID_EVENT_TYPE,
+    livemode: eventAttributes.livemode === true,
+    ...payment,
   }
 }
 
@@ -301,6 +328,69 @@ export function createPaymongoProvider(fetchImpl: typeof fetch = fetch): Payment
 
     verifyWebhookSignature: verifyPaymongoSignature,
     parsePaidEvent: parsePaymongoPaidEvent,
+
+    /**
+     * `GET /checkout_sessions/:id` — the reconciliation fallback's only new
+     * network call. Same auth scheme, same bounded timeout, same
+     * PaymentProviderError discipline as createCheckoutSession above:
+     * unreachable/timed-out, non-2xx, and unparsable-JSON are all "we could
+     * not find out", which the caller must be able to tell apart from
+     * "PayMongo says it isn't paid" (see the PaymentProvider interface doc).
+     */
+    async retrieveSession(sessionId: string): Promise<PaidEvent | null> {
+      const secretKey = requiredEnv('PAYMONGO_SECRET_KEY')
+
+      let response: Response
+      try {
+        response = await fetchImpl(
+          `${PAYMONGO_API_BASE}/checkout_sessions/${encodeURIComponent(sessionId)}`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Basic ${Buffer.from(`${secretKey}:`).toString('base64')}`,
+              Accept: 'application/json',
+            },
+            signal: AbortSignal.timeout(PAYMONGO_TIMEOUT_MS),
+          },
+        )
+      } catch (error) {
+        throw new PaymentProviderError(
+          `PayMongo did not respond: ${error instanceof Error ? error.name : 'unknown error'}`,
+        )
+      }
+
+      if (!response.ok) {
+        throw new PaymentProviderError('PayMongo refused the session retrieval', response.status)
+      }
+
+      let body: unknown
+      try {
+        body = await response.json()
+      } catch (error) {
+        throw new PaymentProviderError(
+          `PayMongo returned an unreadable response: ${error instanceof Error ? error.message : 'invalid JSON'}`,
+          response.status,
+        )
+      }
+
+      // Same reader parsePaidEvent uses on the webhook's embedded resource —
+      // the shapes are believed identical (Task 8 confirms against a real
+      // response). No paid payment in it is a well-formed, honest "not paid
+      // yet", indistinguishable here from a malformed response — both are
+      // null, and both mean "nothing to reconcile", never a guess.
+      const payment = paidPaymentFromSessionResource(asRecord(asRecord(body)?.data))
+      if (!payment) return null
+
+      return {
+        eventId: '',
+        eventType: PAID_EVENT_TYPE,
+        // This session was retrieved with OUR OWN secret key, so it is
+        // necessarily in that key's mode — there is no separate signal to
+        // read here the way the webhook envelope carries one.
+        livemode: paymongoLiveMode(secretKey),
+        ...payment,
+      }
+    },
   }
 }
 

@@ -20,6 +20,8 @@
  *     so in supabase/migrations/20260801063910_listings.sql's comment.
  */
 
+import { formatHourRange } from '@/lib/format'
+
 export type OperatingHoursDay = { dayOfWeek: number; opensHour: number; closesHour: number }
 export type RateBand = { startHour: number; endHour: number; priceCentavos: number }
 export type HourSpan = { startHour: number; endHour: number }
@@ -139,6 +141,29 @@ export function operatingSpan(days: OperatingHoursDay[]): HourSpan | null {
     startHour: Math.min(...days.map((day) => day.opensHour)),
     endHour: Math.max(...days.map((day) => day.closesHour)),
   }
+}
+
+/**
+ * One line an admin can read at a glance, not a full timetable.
+ *
+ * Two shapes only: the common case (open every day on the same window) and
+ * everything else (how many days, and the outer envelope those days span).
+ * Deliberately NOT a per-weekday breakdown — that is what the owner's court
+ * page is for, and the queue links to the branch for anyone who needs more.
+ * The envelope is `[min(opens), max(closes)]`, which is the same span
+ * validateRateBands tiles against, so a summary and a warning always describe
+ * the same hours.
+ */
+export function summarizeHours(days: OperatingHoursDay[]): string {
+  if (days.length === 0) return 'No hours set'
+
+  const opens = Math.min(...days.map((day) => day.opensHour))
+  const closes = Math.max(...days.map((day) => day.closesHour))
+  const span = formatHourRange(opens, closes)
+  const sameWindow = days.every((day) => day.opensHour === opens && day.closesHour === closes)
+
+  if (days.length === 7 && sameWindow) return `${span} daily`
+  return `${days.length} ${days.length === 1 ? 'day' : 'days'} · ${span}`
 }
 
 /** Per-band rules only — the shape each row must have before tiling is even meaningful. */

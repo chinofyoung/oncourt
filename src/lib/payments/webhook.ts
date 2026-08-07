@@ -64,6 +64,17 @@ const CONFIRMING_OUTCOMES = new Set<WebhookOutcome>(['confirmed', 'confirmed_aft
 /**
  * The only writer of `confirmed` in this application.
  *
+ * TWO CALLERS, ONE CORE: the webhook route (src/app/api/webhooks/paymongo/
+ * route.ts) calls this with a PaidEvent it parsed from a pushed delivery;
+ * src/lib/payments/reconcile.ts's reconcilePendingBooking calls it with the
+ * SAME PaidEvent shape, built from a PULLED `retrieveSession` response, for a
+ * webhook that never arrived (a local dev server PayMongo cannot reach, or a
+ * dropped/delayed delivery in production). Nothing below this line knows or
+ * cares which happened — the state table, the idempotency guarantee, and the
+ * locking are identical either way, which is the whole point: a
+ * reconciliation path with WEAKER checks than the webhook would be a payment-
+ * security hole.
+ *
  * ONE TRANSACTION, with the resolved payments row and the booking row both
  * locked `for update`, so two deliveries of two different payments for one
  * booking cannot interleave into two confirmations.

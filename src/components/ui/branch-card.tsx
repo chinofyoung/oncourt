@@ -64,7 +64,14 @@ export function BranchCard({
             className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.2,0.7,0.3,1)] group-hover:scale-[1.045] motion-reduce:transform-none motion-reduce:transition-none"
           />
         ) : (
-          <div className="h-full w-full bg-[var(--band-off)]" />
+          // Initial-letter fallback, per branding.md's entity-card standard —
+          // matches the dashboard branch/court cards' placeholder instead of
+          // a bare color block.
+          <div className="flex h-full w-full items-center justify-center bg-[var(--band-off)]">
+            <span aria-hidden className="font-display text-[40px] font-bold text-[var(--court-deep)]">
+              {branch.name.charAt(0).toUpperCase()}
+            </span>
+          </div>
         )}
       </div>
 

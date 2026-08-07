@@ -36,6 +36,9 @@ function recordingProvider(behavior: { fail?: unknown } = {}) {
     },
     verifyWebhookSignature: () => true,
     parsePaidEvent: () => null,
+    // Unused by any test in this file — startCheckout never calls it — but
+    // required to satisfy the PaymentProvider shape.
+    retrieveSession: async () => null,
   }
   return { provider, calls }
 }

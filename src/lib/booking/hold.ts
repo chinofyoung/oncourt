@@ -41,6 +41,20 @@ export type HoldResult =
         // form a valid instant). Returned instead of throwing — see the
         // guard in createHold below.
         | 'invalid_input'
+        // The past-slot booking fix: the requested slot's END instant is at
+        // or before the database's now(). The window would otherwise be
+        // real, open, and priced — it just already ran out. Distinct from
+        // 'court_closed' (never open at this hour, regardless of the clock)
+        // and from 'slot_taken' (someone else holds it) — here nobody took
+        // it, it simply passed. Evaluated in SQL against now() inside
+        // createHold's transaction, never a JS clock (see that guard's
+        // comment) — mirrors payments/webhook.ts's handlePaidEvent
+        // `ends_at <= now()` gate and availability.ts's
+        // `elapsedThroughHour`, so the grid, this guard, and the webhook's
+        // confirm gate never disagree about whether a slot's time has
+        // passed. No lead-time buffer: the in-progress hour (started but
+        // not yet ended) stays bookable.
+        | 'slot_elapsed'
     }
 
 /**
@@ -160,6 +174,24 @@ export async function createHold(input: CreateHoldInput): Promise<HoldResult> {
       const window = hours.rows[0]
       if (!window || startHour < Number(window.opens_hour) || endHour > Number(window.closes_hour)) {
         return { ok: false as const, reason: 'court_closed' as const }
+      }
+
+      // 3.5. Past-slot booking fix: reject a slot whose END instant is at or
+      //      before the database's now(). Checked here — after "is this
+      //      window structurally real" (court validity, operating hours) but
+      //      before the sweep/ceiling/pricing work below — mirroring
+      //      availability.ts's CellState precedence, where 'closed' wins over
+      //      'past'. Compared in SQL, never a JS clock (same reasoning as
+      //      payments/webhook.ts's handlePaidEvent, REVIEW FIX C-1, which
+      //      this mirrors exactly): a skewed Node clock must not be able to
+      //      gate money. `select (... <= now())` needs no table and always
+      //      returns exactly one row, unlike piggybacking on the court/hours
+      //      lookups above, which return zero rows for a nonexistent court.
+      const elapsedRows = await tx.execute(sql`
+        select (${endsAt}::timestamptz <= now()) as slot_elapsed
+      `)
+      if (elapsedRows.rows[0].slot_elapsed === true) {
+        return { ok: false as const, reason: 'slot_elapsed' as const }
       }
 
       // 4. Expired holds that could actually block this exact slot must

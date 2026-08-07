@@ -12,9 +12,38 @@
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
+/**
+ * Manila calendar date (`YYYY-MM-DD`) of an arbitrary instant — the same
+ * "shift forward by +8h, then read UTC fields" move `manilaToday` and
+ * `loadBranchDay`'s occupied-hours computation (src/lib/booking/
+ * availability.ts) already use, generalized to take any instant rather than
+ * only `Date.now()`. Added so a caller holding a `now()` read from the
+ * database (preferred over the Node clock — see `manilaHourOf` below) can
+ * derive "today" from THAT instant instead of re-reading the JS clock.
+ */
+export function manilaDateOf(at: Date): string {
+  return new Date(at.getTime() + 8 * 3_600_000).toISOString().slice(0, 10)
+}
+
 /** Today's Manila calendar date as `YYYY-MM-DD`. */
 export function manilaToday(): string {
-  return new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10)
+  return manilaDateOf(new Date())
+}
+
+/**
+ * Manila hour-of-day (0-23) of an arbitrary instant. Same shift-then-read
+ * direction as `manilaDateOf`, and correct for the same reason: `at` is
+ * already a real, unambiguous instant, so shifting it forward before reading
+ * UTC fields yields the Manila wall-clock hour.
+ *
+ * Added for the past-slot booking fix: `loadBranchDay` needs "what Manila
+ * hour is it right now" to compute how many of a given date's hours have
+ * already fully elapsed, and must read that from the database's `now()`
+ * rather than the Node process clock (same reasoning as
+ * src/lib/payments/webhook.ts's handlePaidEvent, REVIEW FIX C-1).
+ */
+export function manilaHourOf(at: Date): number {
+  return new Date(at.getTime() + 8 * 3_600_000).getUTCHours()
 }
 
 /**

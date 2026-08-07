@@ -1,7 +1,15 @@
 import { afterAll, expect, test } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { manilaHour, seedBlock, seedBooking, seedBranchWithCourts, seedPlayer, teardownFixtures } from '../helpers/fixtures'
+import {
+  manilaHour,
+  seedBlock,
+  seedBooking,
+  seedBranchWithCourts,
+  seedPayment,
+  seedPlayer,
+  teardownFixtures,
+} from '../helpers/fixtures'
 import { getBookingReceipt, getPlayerDashboard } from '@/lib/bookings/queries'
 
 afterAll(teardownFixtures)
@@ -251,11 +259,13 @@ test('a block never appears on any player surface', async () => {
   expect(dashboard.stats.totalSpentCentavos).toBe(0)
 })
 
-test('getBookingReceipt returns an unpaid hold, with its pending_payment status', async () => {
-  // The receipt page branches on exactly this: `pending_payment` + `?paid=1`
-  // renders the confirming banner, `pending_payment` alone renders "finish
-  // paying". A receipt restricted to REAL_BOOKING would make both branches
-  // unreachable, so this pins that it is not.
+test('getBookingReceipt returns an unpaid hold, with its pending_payment status and no checkout session', async () => {
+  // The receipt page branches on exactly this: `pending_payment` +
+  // `hasCheckoutSession` decides "actively confirming" vs "finish paying" —
+  // never on `?paid=1` (see src/app/bookings/[id]/page.tsx). A receipt
+  // restricted to REAL_BOOKING would make both branches unreachable, so this
+  // pins that it is not. This booking never reached startCheckout, so it has
+  // no `payments` row at all — the genuine "not paid for yet" case.
   const { branchId, courtIds } = await seedBranchWithCourts(1)
   const playerId = await seedPlayer()
   const bookingId = await seedBooking({
@@ -273,5 +283,136 @@ test('getBookingReceipt returns an unpaid hold, with its pending_payment status'
     status: 'pending_payment',
     courtFeeCentavos: 100_000,
     totalChargedCentavos: 100_000,
+    hasCheckoutSession: false,
+  })
+})
+
+test('getBookingReceipt reports hasCheckoutSession once a payments row with a session id exists', async () => {
+  // The evidence the receipt page reconciles on: a booking that DID reach
+  // startCheckout (a payments row with a provider_session_id) must read as
+  // "confirming with the payment provider", never "not paid for yet" — and
+  // that has to be true independent of any `?paid=1` in the URL, which this
+  // query never even sees.
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+  const bookingId = await seedBooking({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    startsAt: manilaHour('2026-12-21', 18),
+    status: 'pending_payment',
+    totalCentavos: 100_000,
+  })
+  await seedPayment({ bookingId, amountCentavos: 100_000 })
+
+  const receipt = await getBookingReceipt(bookingId, playerId)
+  expect(receipt).toMatchObject({
+    id: bookingId,
+    status: 'pending_payment',
+    hasCheckoutSession: true,
+  })
+})
+
+test('getBookingReceipt reports refundOwed once a paid payment is flagged needs_refund', async () => {
+  // The exact real-world bug shape: a player paid for a slot that had already
+  // ended, so handlePaidEvent (src/lib/payments/webhook.ts) refused to
+  // confirm the booking, wrote status = 'paid' and needs_refund = true on the
+  // payment row in that same statement, and left the booking itself at
+  // pending_payment forever. Without this flag, the receipt page cannot tell
+  // "resolved, refund owed" apart from "still waiting for the webhook" — the
+  // two look identical (pending_payment + a payment row) unless this signal
+  // distinguishes them — so it shows a false "still confirming" message
+  // forever.
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+  const bookingId = await seedBooking({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    startsAt: manilaHour('2026-12-22', 18),
+    status: 'pending_payment',
+    totalCentavos: 100_000,
+  })
+  const paymentId = await seedPayment({
+    bookingId,
+    amountCentavos: 100_000,
+    status: 'paid',
+  })
+  // seedPayment has no needsRefund option; flipping it with one extra
+  // statement here is the smaller diff versus widening the shared fixture.
+  await db.execute(sql`
+    update payments set needs_refund = true where id = ${paymentId}::uuid
+  `)
+
+  const receipt = await getBookingReceipt(bookingId, playerId)
+  expect(receipt).toMatchObject({
+    id: bookingId,
+    status: 'pending_payment',
+    refundOwed: true,
+  })
+})
+
+test('getBookingReceipt reports refundOwed false while a payment is still mid-flight', async () => {
+  // The single closest, most confusable case: a payments row exists (so
+  // hasCheckoutSession is true, same as the test above) but has not resolved
+  // yet — status stays at seedPayment's default 'pending'. This pins that
+  // refundOwed does not fire just because a checkout session exists; it only
+  // fires once a payment is both paid AND flagged needs_refund.
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+  const bookingId = await seedBooking({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    startsAt: manilaHour('2026-12-23', 18),
+    status: 'pending_payment',
+    totalCentavos: 100_000,
+  })
+  await seedPayment({ bookingId, amountCentavos: 100_000 })
+
+  const receipt = await getBookingReceipt(bookingId, playerId)
+  expect(receipt).toMatchObject({
+    id: bookingId,
+    status: 'pending_payment',
+    hasCheckoutSession: true,
+    refundOwed: false,
+  })
+})
+
+test('getBookingReceipt reports refundOwed true even after the booking status has moved on to expired', async () => {
+  // The exact scenario the receipt page's banner now depends on: hold sweeps
+  // in this codebase are lazy (src/lib/booking/hold.ts, src/lib/payments/
+  // webhook.ts only expire stale rows when someone else touches the same
+  // slot), so a booking that handlePaidEvent already resolved as
+  // needs_refund can sit at `pending_payment` and later flip to `expired`
+  // once another player reaches for that court hour — with no further writes
+  // to the `payments` row. refundOwed reads `payments`, not `bookings.status`,
+  // so it must still read true here, or the receipt page's refund-owed
+  // banner (gated on this flag across both statuses, not on `isPending`
+  // alone) would silently disappear the moment the sweep runs.
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+  const bookingId = await seedBooking({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    startsAt: manilaHour('2026-12-24', 18),
+    status: 'expired',
+    totalCentavos: 100_000,
+  })
+  const paymentId = await seedPayment({
+    bookingId,
+    amountCentavos: 100_000,
+    status: 'paid',
+  })
+  await db.execute(sql`
+    update payments set needs_refund = true where id = ${paymentId}::uuid
+  `)
+
+  const receipt = await getBookingReceipt(bookingId, playerId)
+  expect(receipt).toMatchObject({
+    id: bookingId,
+    status: 'expired',
+    refundOwed: true,
   })
 })

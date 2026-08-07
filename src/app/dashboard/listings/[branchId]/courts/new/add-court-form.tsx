@@ -1,39 +1,59 @@
 'use client'
 
 import Link from 'next/link'
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import { createCourtAction, type ListingFormState } from '../../../actions'
+import { BORDERED_BUTTON, FOCUS_RING, FormMessage, LIME_BUTTON } from '../../../form-ui'
 import {
-  CHECK_LABEL,
-  FIELD,
-  FOCUS_RING,
-  FormMessage,
-  LABEL,
-  LIME_BUTTON,
-} from '../../../form-ui'
-import {
-  COURT_ENVIRONMENT_LABELS,
-  COURT_ENVIRONMENTS,
-  MAX_COURT_NAME,
-  MAX_SURFACE,
-} from '@/lib/listings/fields'
+  addBandRow,
+  buildBandRows,
+  CourtDetailFields,
+  defaultDayRows,
+  OperatingHoursFields,
+  RateBandFields,
+  removeBandRow,
+  type BandRow,
+  type DayRow,
+} from '../court-schedule-fields'
+import { formatHour } from '@/lib/format'
 
-const RADIO = `h-4 w-4 shrink-0 accent-[var(--court)] ${FOCUS_RING}`
+const CARD = 'rounded-[20px] bg-[var(--panel)] p-5 shadow-[var(--shadow-sm)]'
 
 /**
- * Add a court, on its own page — moved here from the branch page's
- * branch-detail-forms.tsx, which is now named for (and only hosts) the forms
- * that live directly on the branch page. Co-located with courts/new/page.tsx
- * the same way court-forms.tsx sits next to courts/[courtId]/page.tsx.
+ * Add a court, on its own page — now the FULL court form (details, opening
+ * hours, rates), submitted together as one form and written in one
+ * transaction by createCourtAction / createCourtWithSchedule
+ * (src/lib/listings/write.ts). Previously this page collected only name,
+ * surface and environment, then sent the owner to the new court's own page to
+ * add hours and rates as two more separate saves — this is the "first step"
+ * shape the redesign replaces.
  *
- * The header (back-link, h1, description) and the "Add court" submit both
- * live here, not in the page: the button sits top-right of the header and
- * needs `pending` from useActionState, which only exists in this client
- * component. Mirrors AddBranchForm's split with listings/new/page.tsx.
+ * PHOTOS ARE THE ONE SECTION NOT HERE. A photo upload needs an existing
+ * court_id to attach to (addPhoto writes to Supabase Storage under that id),
+ * so there is nothing to upload TO until the transaction below has committed.
+ * Buffering the file client-side and replaying the upload after redirect
+ * would add real failure modes (a court created but its buffered photo lost
+ * to a closed tab, or an orphaned Storage object if the court insert then
+ * failed) for very little gain. The description below says so, and the
+ * post-create redirect lands the owner exactly on the court's own page, where
+ * PhotoManager already lives.
  *
- * createCourtAction redirects to the new court's own page on success, so
- * there is no success state to render here — FormMessage only ever shows a
- * failure.
+ * Reuses the same field markup the edit page's three separate forms use
+ * (CourtDetailFields, OperatingHoursFields, RateBandFields, all in
+ * ../court-schedule-fields.tsx) — there is exactly one copy of the day-row
+ * and band-row JSX, not two copies that could drift apart on what a valid
+ * schedule looks like. The validation RULES are shared too: this form posts
+ * the identical field names parseCourtFields / parseOperatingHours /
+ * parseRateBands (src/lib/listings/fields.ts, src/lib/listings/schedule.ts)
+ * already read for the edit page's forms, and createCourtWithSchedule
+ * re-validates with the exact same functions replaceOperatingHours /
+ * replaceRateBands use.
+ *
+ * Layout mirrors the edit page's current arrangement (courts/[courtId]/
+ * page.tsx): items-start two-column pairs that collapse to one column at
+ * 980px. Court details has no natural pairing partner now that photos are
+ * deferred, so it gets its own full-width row; Opening hours and Rates keep
+ * the edit page's exact pairing, in the same order.
  */
 export function AddCourtForm({ branchId }: { branchId: string }) {
   const [state, formAction, pending] = useActionState<ListingFormState, FormData>(
@@ -41,11 +61,31 @@ export function AddCourtForm({ branchId }: { branchId: string }) {
     null,
   )
 
+  // Sensible starting grid, not an empty one: every day open 7 AM - 10 PM,
+  // and one rate band tiling that exact span with a blank price. An owner who
+  // accepts both defaults only has to type one number. See defaultDayRows()
+  // and buildBandRows() in ../court-schedule-fields.tsx for why 7-22 is the
+  // number chosen.
+  const [dayRows, setDayRows] = useState<DayRow[]>(defaultDayRows)
+  const [bandRows, setBandRows] = useState<BandRow[]>(() => buildBandRows([]))
+
+  function updateDayRow(index: number, patch: Partial<DayRow>) {
+    setDayRows((current) =>
+      current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)),
+    )
+  }
+
+  function updateBandRow(index: number, patch: Partial<BandRow>) {
+    setBandRows((current) =>
+      current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)),
+    )
+  }
+
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form action={formAction} className="flex flex-col gap-6">
       <input type="hidden" name="branchId" value={branchId} />
 
-      <header className="mb-4 flex items-start justify-between gap-4 max-[560px]:flex-col max-[560px]:items-stretch">
+      <header className="flex items-start justify-between gap-4 max-[560px]:flex-col max-[560px]:items-stretch">
         <div>
           {/* ?tab=courts, not a bare branch link: this form was reached from
               the Courts tab, and a plain link back to the branch page would
@@ -60,14 +100,10 @@ export function AddCourtForm({ branchId }: { branchId: string }) {
             Add a court
           </h1>
           <p className="mt-2 max-w-[560px] text-[15px] text-[var(--ink-soft)]">
-            New courts start as pending. Add opening hours and rates on the court&rsquo;s own page,
-            then our team reviews it.
+            New courts start as pending, and our team reviews them once you save. Add photos on the
+            court&rsquo;s own page after it&rsquo;s created.
           </p>
         </div>
-        {/* Lime, not bordered: on the shared branch page this button sat
-            alongside "Save branch" (DARK_BUTTON) and had to avoid a second
-            lime control in the same view. On its own page it is the only
-            primary action, same reasoning as AddBranchForm's submit. */}
         <button
           type="submit"
           disabled={pending}
@@ -79,68 +115,59 @@ export function AddCourtForm({ branchId }: { branchId: string }) {
 
       <FormMessage state={state} />
 
-      <section
-        aria-label="Add a court"
-        className="rounded-[20px] bg-[var(--panel)] p-5 shadow-[var(--shadow-sm)]"
-      >
-        {/* max-w constrains the fields, not the card: the card stays
-            full-width to match the add-branch page's treatment, but two text
-            inputs and a radio group stretching to a wide dashboard monitor's
-            full content width would read as sparse and make "Court name" an
-            oddly long single-line field. 640px keeps both fields at a
-            comfortable reading width while still giving each room to grow
-            past its min-w on narrow screens. */}
+      <section aria-label="Court details" className={CARD}>
+        <h2 className="font-display mb-4 text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
+          Court details
+        </h2>
         <div className="flex max-w-[640px] flex-col gap-4">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="min-w-[180px] flex-1">
-              <label className={LABEL} htmlFor={`add-court-name-${branchId}`}>
-                Court name
-              </label>
-              <input
-                id={`add-court-name-${branchId}`}
-                name="name"
-                required
-                maxLength={MAX_COURT_NAME}
-                placeholder="Court 1"
-                className={FIELD}
-              />
-            </div>
-            <div className="min-w-[180px] flex-1">
-              <label className={LABEL} htmlFor={`add-court-surface-${branchId}`}>
-                Surface (optional)
-              </label>
-              <input
-                id={`add-court-surface-${branchId}`}
-                name="surface"
-                maxLength={MAX_SURFACE}
-                placeholder="Acrylic"
-                className={FIELD}
-              />
-            </div>
-          </div>
-
-          <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <legend className={LABEL}>Environment</legend>
-            {COURT_ENVIRONMENTS.map((environment, index) => (
-              <label
-                key={environment}
-                className={CHECK_LABEL}
-                htmlFor={`add-court-${environment}-${branchId}`}
-              >
-                <input
-                  id={`add-court-${environment}-${branchId}`}
-                  type="radio"
-                  name="environment"
-                  value={environment}
-                  defaultChecked={index === 0}
-                  className={RADIO}
-                />
-                {COURT_ENVIRONMENT_LABELS[environment]}
-              </label>
-            ))}
-          </fieldset>
+          <CourtDetailFields
+            idPrefix={`new-${branchId}`}
+            defaults={{ name: '', environment: 'indoor', surface: null }}
+          />
         </div>
       </section>
+
+      {/* Same even fr/fr split, items-start, and 980px collapse as the
+          schedule pair on the edit page, in the same order: hours, then
+          rates. */}
+      <div className="grid grid-cols-2 items-start gap-6 max-[980px]:grid-cols-1 max-[980px]:gap-4">
+        <section aria-label="Opening hours" className={CARD}>
+          <h2 className="font-display mb-1 text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
+            Opening hours
+          </h2>
+          <p className="mb-4 text-[12.5px] text-[var(--ink-soft)]">
+            One window per day. Closing at {formatHour(24)} means midnight.
+          </p>
+          <OperatingHoursFields
+            idPrefix={`new-${branchId}`}
+            rows={dayRows}
+            onChange={updateDayRow}
+          />
+        </section>
+
+        <section aria-label="Rates" className={CARD}>
+          <h2 className="font-display mb-1 text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
+            Rates
+          </h2>
+          <p className="mb-4 text-[12.5px] text-[var(--ink-soft)]">
+            Bands must cover every open hour exactly once, with no gaps or overlaps. Prices are
+            whole pesos per hour.
+          </p>
+          <RateBandFields
+            idPrefix={`new-${branchId}`}
+            rows={bandRows}
+            onChange={updateBandRow}
+            onRemove={(index) => setBandRows((current) => removeBandRow(current, index))}
+          />
+          <button
+            type="button"
+            onClick={() => setBandRows((current) => addBandRow(current))}
+            className={`${BORDERED_BUTTON} mt-3`}
+          >
+            Add band
+          </button>
+        </section>
+      </div>
     </form>
   )
 }

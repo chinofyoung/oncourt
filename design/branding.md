@@ -57,7 +57,8 @@ Headline scale: h1 68px (desktop) / 44px / 38px (mobile); section h2 30px; card 
 ```css
 --control-h: 56px;   /* hero-level fields + their primary button */
 --btn-h: 48px;       /* standard buttons (Book now, CTAs) */
---btn-h-sm: 38px;    /* compact controls (icon buttons, slot cells, nav pill) */
+--btn-h-sm: 38px;    /* compact controls (icon buttons, form fields, nav pill) */
+--slot-h: 30px;      /* availability-grid slot cells */
 --btn-radius: 12px;  /* ONE corner radius for ALL buttons and input fields */
 ```
 
@@ -70,12 +71,13 @@ Headline scale: h1 68px (desktop) / 44px / 38px (mobile); section h2 30px; card 
 ## Components
 
 - **Nav:** floating over heroes (absolute, transparent, white text + glass pill) or solid `--surface` with hairline border on utility pages. Right side: "List your court" pill + 36px avatar.
-- **Cards:** white, `border-radius: 20px`, no border, shadow `--shadow-sm` (`0 1px 2px rgba(12,31,22,.06), 0 4px 16px rgba(12,31,22,.05)`); hover lifts −4px with `--shadow-lg` (`0 12px 32px rgba(12,31,22,.12)`) and image scale 1.045.
+- **Cards, base recipe:** white, `border-radius: 20px`, no border, shadow `--shadow-sm` (`0 1px 2px rgba(12,31,22,.06), 0 4px 16px rgba(12,31,22,.05)`). Two different things are built on this one base, and they are not interchangeable:
+  - **Panels** — a page section framed in the card recipe: settings, the bookings list, the earnings page, `stat-card.tsx`, "Branch details"/"Branch photos" form cards, dashed-border empty states. Static: no hover, no cover photo, no stretched link. Padding and internal layout are whatever the section's content needs.
+  - **Entity cards** — a clickable tile that links to a different branch/court/record, with a cover photo, a hover lift (`--shadow-lg`, `0 12px 32px rgba(12,31,22,.12)`, −4px translate, image scale 1.045), and a precise structure. See the dedicated section below. Do not add hover-lift/cover-photo/stretched-link to a panel, and do not fold a panel's own controls (multi-field forms, moderation actions) into an entity card's structure — see "Documented variants" below for how the admin queue card resolves that tension instead.
 - **Section headers:** mono uppercase kicker in `--court` above a display h2; optional right-aligned text link "… →".
-- **Availability grid** (signature component): time rows × court columns; the time spine is a plain mono time column (sticky-left), **not** tinted by rate band — an earlier version of this doc specified a shared off-peak/peak tint on that column (a `--band-peak` token), but the real data model has rate bands *per court*, not per branch, so two courts in the same grid can define different band edges (or even a different count of bands) for the same hour. A single shared tint column would be correct for at most one of the visible courts and misleading for the rest, so it was dropped rather than shipped inaccurate (see `src/lib/booking/availability.ts`/`src/components/availability-grid.tsx`, task-9-report.md fix round 1). Open cells show their price in mono; booked cells flat `--booked`; selected cells lime with 1.5px ink border and court-corner tick marks (7×7px, 2px strokes, top-left + bottom-right).
+- **Availability grid** (signature component): time rows × court columns; the time spine is a plain mono time column (sticky-left), **not** tinted by rate band — an earlier version of this doc specified a shared off-peak/peak tint on that column (a `--band-peak` token), but the real data model has rate bands *per court*, not per branch, so two courts in the same grid can define different band edges (or even a different count of bands) for the same hour. A single shared tint column would be correct for at most one of the visible courts and misleading for the rest, so it was dropped rather than shipped inaccurate (see `src/lib/booking/availability.ts`/`src/components/availability-grid.tsx`, task-9-report.md fix round 1). Open cells show a price in mono (in the cell, or once per row in the spine — see Density below); booked cells flat `--booked`; selected cells lime with 1.5px ink border and court-corner tick marks (7×7px, 2px strokes, top-left + bottom-right). A fourth, non-interactive cell state — **past** — covers an hour whose end instant has already passed today (no lead-time buffer; mirrors the payment webhook's `ends_at <= now()` gate so a slot can never be paid for after it renders open): `border-dashed border-[var(--hairline)]` on a transparent fill, `--ink-soft` text, "Past" label, `opacity-70`. Deliberately distinct from both neighbors it could otherwise be confused with — flat `--booked` fill ("Booked") means someone else holds the slot; the plain borderless `opacity-50` "closed" treatment means the court doesn't operate at that hour regardless of the clock. The dashed border reuses the same "info not available" vocabulary as this page's map empty-state block. Density: slot chips are `--slot-h` (30px) in a `px-1 py-0.5` cell, giving ~34px rows; cell labels are 10px mono. The time spine is **shrink-to-fit** (`w-px whitespace-nowrap`), never a fixed or leftover-width column — a `w-full` table hands spare width to its first column, which on a single-court branch rendered a ~340px time column. Slot chips are deliberately NOT max-width capped: a 168px centered cap was tried and read as broken on a one-court branch (a small pill stranded in ~460px of blank column, every row), so chips fill their column and stay a wide, obvious click target. The shrink-to-fit spine is what reclaims the wasted width. When every `open` cell in a row quotes the same price, that price renders once in the spine (right-aligned, muted mono, same line as the time) and those cells render blank; when open cells disagree, each prints its own price. This is decided per row and only after verifying agreement, so it does not reintroduce the shared-band assumption that killed the tint. Because open cells can be blank, a mono-uppercase legend (Available / Selected / Booked / Past / Closed, swatches reusing each state's own fill and border) sits between the table and the summary bar.
 
   **Mockups vs. built app:** several files in `design/mockups/` (`admin-approvals.html`, `branch-page.html`, `checkout.html`, `index.html`, `owner-dashboard.html`, `player-dashboard.html`, `search-results.html`) still define `--band-peak` and/or render the tinted time-spine this entry describes as dropped — `branch-page.html` in particular still visibly renders it. Those mockups predate this change and were not updated when it landed; they are intentionally left as-is (not edited as part of this fix) rather than treated as a design decision to re-litigate. Where a mockup and the built app disagree on this point, **the built app is authoritative** — go by `src/components/availability-grid.tsx`, not the mockup HTML.
-- **Nested cards** (a card grid inside another card, e.g. the courts grid inside a branch's "Courts" card): skip the panel/shadow card recipe above — a shadowed card on top of a shadowed card reads as mush. Use a `--hairline` border on the `--btn-radius` token instead (the same treatment `BORDERED_BUTTON` and the other bordered controls already use), hover border to `--court`.
 - **Tab strip:** a `<nav>` of plain links, not `role="tab"`/`aria-selected` — these tabs navigate to a URL (`?tab=`), they don't toggle a panel in place, so link semantics plus `aria-current="page"` on the active one is the honest choice. Underline style: `font-display` weight 700, 2px bottom border, active tab `border-[var(--ink)] text-[var(--ink)]`, inactive `border-transparent text-[var(--ink-soft)]` hovering to `--ink`, the row sitting on a `--hairline` bottom border. See `src/app/bookings/page.tsx` and `src/app/dashboard/listings/[branchId]/page.tsx`.
 - **Rating:** lime dot (7px, ink outline) + bold number, count in parens muted.
 - **Maps:** Leaflet + CARTO Positron light tiles (`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png`, the `light_all` basemap). The two-tone look is produced by an inline SVG duotone filter applied to `.leaflet-tile-pane`: a `feColorMatrix` reduces the tile image to luminance, feeding a `feComponentTransfer` whose per-channel `feFuncR`/`feFuncG`/`feFuncB` lookup tables remap that luminance into two brand tones — dark tile values map to `--court-deep`, light tile values map to `--band-off`. It's applied via CSS as exactly `filter: url(#duotone) contrast(1.06)` on `.leaflet-tile-pane`. Exact tableValues, so the filter is reproducible from this doc alone: feFuncR `0.078 0.918`, feFuncG `0.239 0.949`, feFuncB `0.173 0.894`. Markers live in Leaflet's marker pane, a sibling of (outside) the tile pane, so the filter does not apply to them — markers stay untinted; price markers are pills: white bg, `--ink` text, mono 12px, `--shadow-sm`, 999px radius, active/hover inverts to `--ball` bg with a 1.5px `--ink` border. Attribution stays legible. **Warning:** container-level blend-mode overlays do NOT work with Leaflet — `.leaflet-map-pane` sits at z-index 400 on the map container, so any overlay is either fully below the map or fully above the markers and can never tint the tiles.
@@ -104,6 +106,104 @@ Headline scale: h1 68px (desktop) / 44px / 38px (mobile); section h2 30px; card 
   courts and then dropped it once a tab strip moved courts elsewhere,
   leaving one card alone in a half-width column. Prefer tabs over columns
   when the sections are separate concerns rather than a single view.
+
+## Entity cards
+
+A clickable tile that represents ONE thing — a branch, a court — with a
+cover photo, a title, one line of meta, and (dashboard/admin contexts) an
+action control. The canonical implementations: `src/components/ui/branch-
+card.tsx` (public, used by `src/components/search/results-grid.tsx`), the
+dashboard branch grid (`src/app/dashboard/listings/page.tsx`), the dashboard
+court grid (`src/app/dashboard/listings/[branchId]/page.tsx`), and the admin
+court queue (`src/app/admin/page.tsx`).
+
+**What this is NOT.** Roughly 30 files in this codebase use
+`rounded-[20px]` — most of them are page **panels**, not entity cards:
+settings forms, the bookings list, the earnings page, `stat-card.tsx`, the
+"Branch details"/"Branch photos" form cards, dashed-border empty states. The
+tell: does removing the card change what page/record you're looking at? An
+entity card is a link elsewhere; a panel just frames a section of the
+current page. Don't give a panel a cover photo, a hover lift, or a
+stretched-link structure because it happens to share the 20px/white/shadow
+DNA — and don't reshape a panel's own multi-field form or moderation
+controls to fit the entity-card skeleton below (see "Documented variants").
+
+**Structure, top to bottom:**
+
+1. **Outer wrapper** — sits directly on `--surface` (the page background),
+   never nested inside another card/panel's padding (see "No nested cards"
+   below). `overflow-hidden rounded-[20px] bg-[var(--panel)]` (no border),
+   shadow `--shadow-sm`; hover `-translate-y-1` + shadow `--shadow-lg`;
+   `transition-[transform,box-shadow] duration-[220ms]
+   ease-[cubic-bezier(0.2,0.7,0.3,1)]`; guard with
+   `motion-reduce:transform-none motion-reduce:transition-none`.
+   - If the card is a pure link with no independent in-card control (the
+     public `BranchCard`), the wrapper itself is the `<Link>`.
+   - If the card carries its own action (an Edit button, etc.), the wrapper
+     is a plain `<div className="group relative ...">` and the click target
+     is a separate `<Link className="absolute inset-0 ...">` carrying an
+     `sr-only` accessible name — nesting an `<a>` inside an `<a>` is invalid
+     HTML. The action control is a POSITIONED sibling *after* it in DOM
+     order (`relative z-10`), which paints above the stretched link and
+     intercepts its own clicks; that ordering, not `pointer-events`, is what
+     makes both work.
+2. **Cover** — `aspect-[16/10] overflow-hidden`, no padding.
+   - Photo: `<img>` `h-full w-full object-cover`, `transition-transform
+     duration-500 ease-[cubic-bezier(0.2,0.7,0.3,1)]
+     group-hover:scale-[1.045]`, same motion-reduce guard, plus a targeted
+     `eslint-disable-next-line @next/next/no-img-element` (the bucket is
+     public and the upload is already sized — `next/image` would add a
+     loader round trip for no benefit on a dashboard/admin card).
+   - No photo: a `flex items-center justify-center` div on
+     `bg-[var(--band-off)]` showing the entity's initial letter,
+     `font-display text-[40px] font-bold text-[var(--court-deep)]`.
+   - If the wrapper is a `<div>` (the stretched-link case above), the cover
+     div carries NO position/z-index of its own — a positioned cover would
+     paint above the stretched link in DOM order and create a dead click
+     zone over the whole photo.
+3. **Body** — `px-5 pt-[18px] pb-5`.
+   - Title: `font-display text-lg font-bold tracking-[-0.015em]
+     text-[var(--ink)]`.
+   - Meta line: `mt-[5px] text-[13px] text-[var(--ink-soft)]`, one line,
+     `·`-separated facts (rating, city, distance, environment/surface...).
+   - Below that: whatever the card needs — status/count pills
+     (`font-mono rounded-full bg-[var(--band-off)] px-2.5 py-1 text-[10.5px]
+     tracking-[.05em] text-[var(--court-deep)] uppercase`), a price row
+     behind a `border-t border-[var(--hairline)] pt-3.5` divider, amenity
+     chips, a one-line status note — and, for cards with an action, the
+     action button (`relative z-10`) last.
+
+**No nested cards.** An entity card never lives inside another card's
+padding/shadow — a shadowed tile inside a shadowed panel reads as mush. If a
+grid of entity cards used to sit inside a panel `<section>` (the old Courts
+tab, wrapped in the `CARD` class), pull the grid out so it sits directly on
+`--surface`, with the section's `<h2>` and primary action promoted to a
+plain header row above the grid instead. This retires an earlier version of
+this doc's rule, which reached for a `--hairline`-bordered "nested card"
+treatment for exactly that case
+(`src/app/dashboard/listings/[branchId]/page.tsx`'s original Courts tab). It
+is now superseded rather than a coexisting option: every entity-card grid in
+the app sits on the page background, so there is one card treatment, not
+two. If a future page is tempted to nest an entity-card grid inside a panel
+again, lift the grid out instead of reintroducing the hairline variant.
+
+**Documented variants** (deviate on purpose, not by drift):
+
+- Public `BranchCard` adds a rating row and a price-from + court-count row
+  behind the standard hairline divider — data the dashboard/admin cards
+  don't carry.
+- The admin court queue card (`src/app/admin/page.tsx`) is not a single
+  clickable tile — it hosts several independent controls at once (approve/
+  reject or suspend forms, a "View branch" link), so there is no single
+  destination a whole-card click could mean. It therefore has no outer
+  `<Link>`, no stretched-link structure, no hover-lift, and no cover-image
+  zoom on hover — only its explicit interactive elements respond to hover/
+  focus, the same reasoning that keeps a panel un-lifted. It also uses `p-6`
+  body padding (`max-[560px]:p-5`) instead of the standard `px-5 pt-[18px]
+  pb-5`, because its body carries substantially more (a price line, an
+  hours/environment fact list, the forms above, the branch link) than a
+  plain title+meta card, and the tighter standard padding read cramped
+  against that much content.
 
 ## Photography
 

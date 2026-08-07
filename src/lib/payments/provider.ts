@@ -59,6 +59,29 @@ export interface PaymentProvider {
     options?: VerifyOptions,
   ): boolean
   parsePaidEvent(rawBody: string): PaidEvent | null
+  /**
+   * Actively asks the provider whether a checkout session it created has
+   * been paid — the fallback for a webhook that never arrives. A local dev
+   * server at http://localhost:3000 is one reason (PayMongo cannot POST to
+   * it); a dropped or delayed delivery in production is another, and a real
+   * gap either way, because `parsePaidEvent`/the webhook route are otherwise
+   * the ONLY path to `confirmed`.
+   *
+   * Returns the SAME `PaidEvent` shape `parsePaidEvent` produces — never a
+   * parallel shape — so a caller has exactly one thing to hand to
+   * `handlePaidEvent` regardless of whether the paid event was pushed or
+   * pulled. Null covers both "not paid yet" and "the response doesn't carry
+   * a paid payment we can read with certainty," mirroring `parsePaidEvent`'s
+   * own null contract: never guess, even about a well-formed but unpaid
+   * response.
+   *
+   * Network failure, a non-2xx response, or an unparsable body throw
+   * `PaymentProviderError` (matching `createCheckoutSession`) rather than
+   * returning null — "PayMongo could not be reached" and "PayMongo says this
+   * is not paid" are different facts, and a caller retrying later needs to
+   * tell them apart.
+   */
+  retrieveSession(sessionId: string): Promise<PaidEvent | null>
 }
 
 /** The provider refused, timed out, or answered something we cannot read. */

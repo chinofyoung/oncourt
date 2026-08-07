@@ -6,6 +6,7 @@ import { branchIdOfCourt } from '@/lib/courts/lookup'
 import {
   createBranch,
   createCourt,
+  createCourtWithSchedule,
   replaceOperatingHours,
   replaceRateBands,
   updateBranch,
@@ -117,6 +118,26 @@ test('createBranch stores amenities and the map pin', async () => {
   expect(Number(row.rows[0].lng)).toBeCloseTo(121.1029, 5)
 })
 
+test('createBranch stores a retired canonical slug and a free-text custom amenity side by side', async () => {
+  // aircon, pro-shop, and night-lights were canonical checkbox amenities
+  // before the vocabulary change and are now absorbed as plain custom
+  // amenities (parseBranchFields accepts them by shape, not vocabulary) —
+  // this is the write layer half of that round trip: createBranch/updateBranch
+  // never re-validate against AMENITY_SLUGS, they store whatever array
+  // parseBranchFields already approved, canonical or custom alike.
+  const ownerId = await seedOwner()
+  const result = await createBranch({
+    ownerId,
+    fields: branchFields({ amenities: ['parking', 'aircon', 'Ping-pong table'] }),
+  })
+  if (!result.ok) throw new Error('createBranch failed')
+
+  const row = await db.execute(
+    sql`select amenities from branches where id = ${result.branchId}::uuid`,
+  )
+  expect(row.rows[0]).toMatchObject({ amenities: ['parking', 'aircon', 'Ping-pong table'] })
+})
+
 test('createBranch stores a null location when no pin was set', async () => {
   // Geocoding is non-blocking per the spec, so "no pin yet" is a real state.
   const ownerId = await seedOwner()
@@ -209,6 +230,130 @@ test('createCourt reports branch_missing for an unknown branch', async () => {
       fields: { name: 'Ghost', environment: 'indoor', surface: null },
     }),
   ).toEqual({ ok: false, reason: 'branch_missing' })
+})
+
+// --------------------------------------------- create with hours and bands
+
+/** Every court currently sitting under a branch, for the "nothing was created" assertions below. */
+async function courtCountOf(branchId: string): Promise<number> {
+  const result = await db.execute(
+    sql`select count(*)::int as n from courts where branch_id = ${branchId}::uuid`,
+  )
+  return Number(result.rows[0].n)
+}
+
+test('createCourtWithSchedule inserts the court, its hours and its bands together', async () => {
+  const { branchId } = await seedBranchWithCourts(0)
+  const result = await createCourtWithSchedule({
+    branchId,
+    fields: { name: 'Court New', environment: 'outdoor', surface: 'Acrylic' },
+    days: [
+      { dayOfWeek: 0, opensHour: 7, closesHour: 22 },
+      { dayOfWeek: 6, opensHour: 6, closesHour: 24 },
+    ],
+    bands: [
+      { startHour: 6, endHour: 17, priceCentavos: 26500 },
+      { startHour: 17, endHour: 24, priceCentavos: 36500 },
+    ],
+  })
+
+  expect(result).toMatchObject({ ok: true })
+  if (!result.ok) throw new Error('unreachable')
+
+  const court = await db.execute(sql`
+    select name, environment::text as environment, surface, status::text as status
+    from courts where id = ${result.courtId}::uuid
+  `)
+  expect(court.rows[0]).toEqual({
+    name: 'Court New',
+    environment: 'outdoor',
+    surface: 'Acrylic',
+    status: 'pending',
+  })
+
+  const hours = await db.execute(sql`
+    select day_of_week, opens_hour, closes_hour from court_operating_hours
+    where court_id = ${result.courtId}::uuid order by day_of_week
+  `)
+  expect(hours.rows.map((r) => Number(r.day_of_week))).toEqual([0, 6])
+  expect(hours.rows.map((r) => Number(r.closes_hour))).toEqual([22, 24])
+
+  const bands = await db.execute(sql`
+    select start_hour, end_hour, price_centavos from court_rate_bands
+    where court_id = ${result.courtId}::uuid order by start_hour
+  `)
+  expect(bands.rows.map((r) => Number(r.price_centavos))).toEqual([26500, 36500])
+})
+
+test('createCourtWithSchedule creates nothing when the hours are invalid', async () => {
+  // closesHour <= opensHour is exactly the shape validateOperatingHours
+  // rejects — the point is that the court row itself must not exist either,
+  // not merely that the hours/bands were skipped.
+  const { branchId } = await seedBranchWithCourts(0)
+  const before = await courtCountOf(branchId)
+
+  const result = await createCourtWithSchedule({
+    branchId,
+    fields: { name: 'Should Not Exist', environment: 'indoor', surface: null },
+    days: [{ dayOfWeek: 1, opensHour: 20, closesHour: 8 }],
+    bands: [{ startHour: 20, endHour: 8, priceCentavos: 26500 }],
+  })
+
+  expect(result).toEqual({ ok: false, reason: 'invalid_window' })
+  expect(await courtCountOf(branchId)).toBe(before)
+})
+
+test('createCourtWithSchedule creates nothing when the bands do not tile the given hours', async () => {
+  // Hours span 7-22; bands only cover 7-18, leaving four hours unpriced.
+  // The failure must roll back the whole transaction, not just skip the
+  // bands insert — otherwise this would be exactly the half-built court the
+  // single-transaction design exists to prevent.
+  const { branchId } = await seedBranchWithCourts(0)
+  const before = await courtCountOf(branchId)
+
+  const result = await createCourtWithSchedule({
+    branchId,
+    fields: { name: 'Should Not Exist Either', environment: 'indoor', surface: null },
+    days: [{ dayOfWeek: 2, opensHour: 7, closesHour: 22 }],
+    bands: [{ startHour: 7, endHour: 18, priceCentavos: 26500 }],
+  })
+
+  expect(result).toEqual({ ok: false, reason: 'bands_do_not_tile' })
+  expect(await courtCountOf(branchId)).toBe(before)
+
+  const orphanedHours = await db.execute(sql`
+    select count(*)::int as n from court_operating_hours coh
+    join courts c on c.id = coh.court_id
+    where c.branch_id = ${branchId}::uuid
+  `)
+  expect(Number(orphanedHours.rows[0].n)).toBe(0)
+})
+
+test('createCourtWithSchedule rejects an empty band list without creating a court', async () => {
+  const { branchId } = await seedBranchWithCourts(0)
+  const before = await courtCountOf(branchId)
+
+  const result = await createCourtWithSchedule({
+    branchId,
+    fields: { name: 'No Bands', environment: 'indoor', surface: null },
+    days: [{ dayOfWeek: 3, opensHour: 7, closesHour: 22 }],
+    bands: [],
+  })
+
+  expect(result).toEqual({ ok: false, reason: 'no_bands' })
+  expect(await courtCountOf(branchId)).toBe(before)
+})
+
+test('createCourtWithSchedule reports branch_missing for an unknown branch and creates nothing', async () => {
+  const result = await createCourtWithSchedule({
+    branchId: UNKNOWN_ID,
+    fields: { name: 'Ghost', environment: 'indoor', surface: null },
+    days: [{ dayOfWeek: 4, opensHour: 7, closesHour: 22 }],
+    bands: [{ startHour: 7, endHour: 22, priceCentavos: 26500 }],
+  })
+
+  expect(result).toEqual({ ok: false, reason: 'branch_missing' })
+  expect(await courtCountOf(UNKNOWN_ID)).toBe(0)
 })
 
 test('updateCourtFields renames an approved court without re-queueing it', async () => {

@@ -22,6 +22,19 @@ async function addBranchPhoto(branchId: string, storagePath: string, sortOrder: 
   `)
 }
 
+async function addCourtPhoto(
+  courtId: string,
+  storagePath: string,
+  sortOrder: number,
+): Promise<string> {
+  const result = await db.execute(sql`
+    insert into court_photos (court_id, storage_path, sort_order)
+    values (${courtId}::uuid, ${storagePath}, ${sortOrder})
+    returning id
+  `)
+  return result.rows[0].id as string
+}
+
 test('getListingBranches counts courts by status and photos per branch', async () => {
   const { branchId, courtIds } = await seedBranchWithCourts(3)
   await setStatus(courtIds[0], 'pending')
@@ -86,6 +99,68 @@ test('getListingBranch returns the editable fields, photos in order, and courts'
 
 test('getListingBranch returns null for an unknown branch', async () => {
   expect(await getListingBranch(UNKNOWN_ID)).toBeNull()
+})
+
+test('getListingBranch reports a price range and a null one for a court with no bands yet', async () => {
+  const { branchId, courtIds } = await seedBranchWithCourts(2)
+  // Math.min/max of an empty array is Infinity, not null — the guard this
+  // pins, mirroring getAdminCourts' identical test.
+  await db.execute(sql`delete from court_rate_bands where court_id = ${courtIds[1]}::uuid`)
+
+  const branch = await getListingBranch(branchId)
+  const priced = branch!.courts.find((court) => court.id === courtIds[0])!
+  const unpriced = branch!.courts.find((court) => court.id === courtIds[1])!
+
+  expect(priced.minPriceCentavos).toBe(26500)
+  expect(priced.maxPriceCentavos).toBe(36500)
+  expect(unpriced.minPriceCentavos).toBeNull()
+  expect(unpriced.maxPriceCentavos).toBeNull()
+})
+
+test("getListingBranch's hours summary and schedule warning agree with the court's own seeded schedule", async () => {
+  const { branchId, courtIds } = await seedBranchWithCourts(2)
+  // Court 1: still open every day on the fixture's 11-24 window, and its
+  // bands still tile it exactly, so this is the "no warning" baseline.
+  // Court 2: hours deleted entirely, so it has nothing to tile — the same
+  // 'no_open_day' state a brand-new court starts in.
+  await db.execute(sql`delete from court_operating_hours where court_id = ${courtIds[1]}::uuid`)
+
+  const branch = await getListingBranch(branchId)
+  const tiling = branch!.courts.find((court) => court.id === courtIds[0])!
+  const noHours = branch!.courts.find((court) => court.id === courtIds[1])!
+
+  expect(tiling.hoursSummary).toBe('11 – 12 AM daily')
+  expect(tiling.scheduleWarning).toBeNull()
+  expect(noHours.hoursSummary).toBe('No hours set')
+  expect(noHours.scheduleWarning).toBe('no_open_day')
+})
+
+test("getListingBranch returns each court's lowest-sort_order photo as coverPhotoPath, tie-broken by id, or null with no photos", async () => {
+  const { branchId, courtIds } = await seedBranchWithCourts(2)
+  const [withPhotos, withoutPhotos] = courtIds
+  // Deliberately inserted out of order so the ORDER BY is doing real work.
+  await addCourtPhoto(withPhotos, `courts/${withPhotos}/second.jpg`, 1)
+  const firstId = await addCourtPhoto(withPhotos, `courts/${withPhotos}/first.jpg`, 0)
+  // Same sort_order as "first.jpg": the `, p.id` tie-break must pick
+  // whichever of the two has the lower id, and stay stable across repeated
+  // calls, rather than shuffling between renders.
+  const tiedId = await addCourtPhoto(withPhotos, `courts/${withPhotos}/tied-a.jpg`, 0)
+  const expectedTiedWinner =
+    tiedId < firstId ? `courts/${withPhotos}/tied-a.jpg` : `courts/${withPhotos}/first.jpg`
+
+  const branch = await getListingBranch(branchId)
+  const withCover = branch!.courts.find((court) => court.id === withPhotos)!
+  const withoutCover = branch!.courts.find((court) => court.id === withoutPhotos)!
+
+  expect(withCover.coverPhotoPath).toBe(expectedTiedWinner)
+  expect(withoutCover.coverPhotoPath).toBeNull()
+
+  // Repeat the read: the tie-break must be deterministic, not luck of one
+  // query plan.
+  const branchAgain = await getListingBranch(branchId)
+  expect(branchAgain!.courts.find((court) => court.id === withPhotos)!.coverPhotoPath).toBe(
+    expectedTiedWinner,
+  )
 })
 
 test('getListingCourt returns hours, bands, photos and no warning when the bands tile', async () => {

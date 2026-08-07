@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { createHold, MAX_CONCURRENT_HOLDS } from '@/lib/booking/hold'
+import { manilaDateOf, manilaHourOf } from '@/lib/date-manila'
 import { seedBranchWithCourts, seedPlayer } from '../helpers/fixtures'
 
 const DATE = '2026-08-15'
@@ -113,6 +114,76 @@ test('refuses hours outside the court operating window', async () => {
     courtId: courtIds[0], branchId, playerId, date: DATE, startHour: 9, endHour: 10,
   })
   expect(result).toEqual({ ok: false, reason: 'court_closed' })
+})
+
+// The past-slot booking fix: a player must never be able to hold (and then
+// pay for) a slot whose end instant has already passed — mirrors
+// payments/webhook.ts's handlePaidEvent `ends_at <= now()` gate and
+// availability.ts's `elapsedThroughHour`, so the grid, this guard, and the
+// webhook's confirm gate never disagree. 2020-01-01 is unambiguously in the
+// past regardless of when this suite actually runs, and the fixture seeds
+// every day_of_week with the same 11-24 window, so no weekday-specific setup
+// is needed. Asserts no row was inserted, not just the returned reason — the
+// guard must short-circuit before the insert, not merely relabel it.
+test('rejects a slot whose end instant has already passed', async () => {
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+
+  const result = await createHold({
+    courtId: courtIds[0], branchId, playerId, date: '2020-01-01', startHour: 18, endHour: 19,
+  })
+  expect(result).toEqual({ ok: false, reason: 'slot_elapsed' })
+
+  const rows = await db.execute(sql`
+    select count(*)::int as n from bookings where court_id = ${courtIds[0]}::uuid
+  `)
+  expect(rows.rows[0].n).toBe(0)
+})
+
+// Companion to the rejection test above: proves the new guard doesn't
+// collaterally reject a slot that is genuinely still in the future.
+test('still accepts a slot whose end instant is in the future', async () => {
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+
+  const result = await createHold({
+    courtId: courtIds[0], branchId, playerId, date: DATE, startHour: 20, endHour: 21,
+  })
+  expect(result.ok).toBe(true)
+})
+
+// The boundary the rule is actually about: an hour that has STARTED but not
+// ENDED must stay bookable — only `ends_at <= now()` elapses a slot, never
+// `starts_at`. Computed from the database's own `now()` (via manilaDateOf/
+// manilaHourOf, the same helpers availability.ts uses) rather than a fixed
+// hour, so the test is correct no matter what wall-clock time it actually
+// runs at. This court's hours/bands are widened to the full day first so the
+// test binds only to the elapsed-vs-in-progress boundary, not to whatever the
+// operating-hours window happens to be at run time.
+test('an in-progress hour (started but not ended) is still bookable', async () => {
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+  const courtId = courtIds[0]
+
+  await db.execute(sql`
+    update court_operating_hours set opens_hour = 0, closes_hour = 24
+    where court_id = ${courtId}::uuid
+  `)
+  await db.execute(sql`delete from court_rate_bands where court_id = ${courtId}::uuid`)
+  await db.execute(sql`
+    insert into court_rate_bands (court_id, start_hour, end_hour, price_centavos)
+    values (${courtId}::uuid, 0, 24, 30000)
+  `)
+
+  const nowRows = await db.execute(sql`select now() as db_now`)
+  const dbNow = new Date(nowRows.rows[0].db_now as string)
+  const today = manilaDateOf(dbNow)
+  const hour = manilaHourOf(dbNow)
+
+  const result = await createHold({
+    courtId, branchId, playerId, date: today, startHour: hour, endHour: hour + 1,
+  })
+  expect(result.ok).toBe(true)
 })
 
 // Fix round 1, Important-1: the brief's reference trusts the caller-supplied

@@ -4,6 +4,8 @@ import {
   COURT_FIELDS_FAILURE_MESSAGES,
   isInPhilippines,
   MAX_BRANCH_NAME,
+  MAX_CUSTOM_AMENITIES,
+  MAX_CUSTOM_AMENITY_LENGTH,
   parseBranchFields,
   parseCourtFields,
   slugifyBranchName,
@@ -122,14 +124,16 @@ test('parseBranchFields accepts every amenity in the search vocabulary', () => {
   expect(result).toMatchObject({ ok: true, fields: { amenities: [...AMENITY_SLUGS] } })
 })
 
-test('parseBranchFields rejects an amenity outside the vocabulary', () => {
-  // branches.amenities is a bare text[] with no constraint, and the search
-  // filter (`b.amenities @> $`) can only ever match slugs it renders a chip
-  // for — so an off-vocabulary value would be stored, displayed as a
-  // hyphen-stripped fallback, and unfilterable forever.
-  expect(parseBranchFields(branchForm({}, ['parking', 'helipad']))).toEqual({
-    ok: false,
-    reason: 'invalid_amenity',
+test('parseBranchFields accepts a well-formed amenity outside the canonical vocabulary as custom', () => {
+  // branches.amenities is a bare text[] with no constraint. A value outside
+  // AMENITY_SLUGS used to be rejected outright; now the owner can add exactly
+  // this kind of thing on purpose (the "Add" button in BranchFieldset), so it
+  // is accepted and stored verbatim rather than rejected — see the
+  // custom-amenity tests below for what's still rejected (too long, blank,
+  // too many, control characters, case-insensitive duplicates).
+  expect(parseBranchFields(branchForm({}, ['parking', 'helipad']))).toMatchObject({
+    ok: true,
+    fields: { amenities: ['parking', 'helipad'] },
   })
 })
 
@@ -139,6 +143,99 @@ test('parseBranchFields rejects a duplicated amenity', () => {
     reason: 'invalid_amenity',
   })
 })
+
+// ---------------------------------------------------------- custom amenities
+
+test('parseBranchFields accepts a custom amenity alongside canonical ones', () => {
+  const result = parseBranchFields(branchForm({}, ['parking', 'Wifi']))
+  expect(result).toMatchObject({ ok: true, fields: { amenities: ['parking', 'Wifi'] } })
+})
+
+test('parseBranchFields trims a custom amenity', () => {
+  const result = parseBranchFields(branchForm({}, ['  Wifi  ']))
+  expect(result).toMatchObject({ ok: true, fields: { amenities: ['Wifi'] } })
+})
+
+test('parseBranchFields rejects a blank or whitespace-only amenity', () => {
+  // An unchecked checkbox submits nothing at all, so an empty string here can
+  // only come from a hand-crafted request — reject it rather than silently
+  // dropping it.
+  expect(parseBranchFields(branchForm({}, ['   ']))).toEqual({
+    ok: false,
+    reason: 'invalid_amenity',
+  })
+})
+
+test('parseBranchFields rejects a custom amenity over the length limit', () => {
+  expect(
+    parseBranchFields(branchForm({}, ['x'.repeat(MAX_CUSTOM_AMENITY_LENGTH + 1)])),
+  ).toEqual({ ok: false, reason: 'invalid_amenity' })
+})
+
+test('parseBranchFields accepts a custom amenity right at the length limit', () => {
+  const value = 'x'.repeat(MAX_CUSTOM_AMENITY_LENGTH)
+  expect(parseBranchFields(branchForm({}, [value]))).toMatchObject({
+    ok: true,
+    fields: { amenities: [value] },
+  })
+})
+
+test('parseBranchFields rejects more custom amenities than the cap allows', () => {
+  const tooMany = Array.from({ length: MAX_CUSTOM_AMENITIES + 1 }, (_, i) => `Custom ${i}`)
+  expect(parseBranchFields(branchForm({}, tooMany))).toEqual({
+    ok: false,
+    reason: 'invalid_amenity',
+  })
+})
+
+test('parseBranchFields accepts exactly the maximum number of custom amenities', () => {
+  const atCap = Array.from({ length: MAX_CUSTOM_AMENITIES }, (_, i) => `Custom ${i}`)
+  expect(parseBranchFields(branchForm({}, atCap))).toMatchObject({
+    ok: true,
+    fields: { amenities: atCap },
+  })
+})
+
+test('parseBranchFields rejects a custom amenity containing control characters', () => {
+  expect(parseBranchFields(branchForm({}, ['Wifi\n5G']))).toEqual({
+    ok: false,
+    reason: 'invalid_amenity',
+  })
+  expect(parseBranchFields(branchForm({}, ['Wifi\t5G']))).toEqual({
+    ok: false,
+    reason: 'invalid_amenity',
+  })
+})
+
+test('parseBranchFields rejects a case-insensitive duplicate across canonical and custom amenities', () => {
+  // "Parking" typed as a custom entry alongside the "parking" checkbox is the
+  // same amenity twice — `amenities @> '{parking,parking}'` would match
+  // identically to one, so storing both only doubles the rendered chip.
+  expect(parseBranchFields(branchForm({}, ['parking', 'Parking']))).toEqual({
+    ok: false,
+    reason: 'invalid_amenity',
+  })
+})
+
+test('parseBranchFields rejects a case-insensitive duplicate between two custom amenities', () => {
+  expect(parseBranchFields(branchForm({}, ['Wifi', 'WIFI']))).toEqual({
+    ok: false,
+    reason: 'invalid_amenity',
+  })
+})
+
+test('parseBranchFields accepts a retired canonical slug as a plain custom amenity', () => {
+  // aircon, pro-shop, and night-lights were canonical checkbox amenities
+  // before this vocabulary change and were retired from AMENITY_SLUGS. A
+  // branch that already stored one must not lose it on its next save — it
+  // now round-trips as an ordinary custom amenity instead.
+  const result = parseBranchFields(branchForm({}, ['aircon', 'pro-shop', 'night-lights']))
+  expect(result).toMatchObject({
+    ok: true,
+    fields: { amenities: ['aircon', 'pro-shop', 'night-lights'] },
+  })
+})
+
 
 test('parseBranchFields accepts a coordinate inside the Philippines', () => {
   const result = parseBranchFields(branchForm({ lat: '14.6507', lng: '121.1029' }))

@@ -175,6 +175,91 @@ export async function createCourt(input: {
   }
 }
 
+export type CreateCourtWithScheduleResult =
+  | { ok: true; courtId: string }
+  | { ok: false; reason: 'branch_missing' | HoursFailure | BandsFailure }
+
+/**
+ * The full create path: a court, its opening hours, and its rate bands, in
+ * ONE transaction. Unlike the three functions below (which each replace one
+ * slice of an EXISTING court), this has no row to lock and re-queue — a court
+ * that does not exist yet cannot be `approved` or `rejected`, so there is no
+ * requeueCourtSql() call here. It inserts with the same column defaults
+ * createCourt() relies on ('pending', null rejection_reason).
+ *
+ * Validated twice on purpose, same division of labor as replaceOperatingHours
+ * and replaceRateBands: the shape rules (validateOperatingHours,
+ * validateRateBands) are re-checked here rather than merely trusted from the
+ * action, and the tiling check runs against `input.days` itself — the hours
+ * this call is ABOUT to write — rather than against stored rows, because there
+ * is no court row yet to read hours from. operatingSpan(input.days) cannot be
+ * null here: validateOperatingHours already rejected an empty list.
+ *
+ * The court insert failing with a foreign-key violation (the branch was
+ * deleted between the guard and the write) is left to throw OUT of the
+ * transaction rather than caught inside it: Postgres aborts a transaction on
+ * any statement error, so catching it here and returning normally would leave
+ * the surrounding db.transaction() trying to COMMIT an already-aborted
+ * transaction. Letting it propagate is what makes db.transaction() roll back
+ * cleanly; the outer try/catch below then turns it into the same
+ * `branch_missing` reason createCourt() reports for the identical failure.
+ */
+export async function createCourtWithSchedule(input: {
+  branchId: string
+  fields: CourtFields
+  days: OperatingHoursDay[]
+  bands: RateBand[]
+}): Promise<CreateCourtWithScheduleResult> {
+  const hoursFailure = validateOperatingHours(input.days)
+  if (hoursFailure !== null) return { ok: false, reason: hoursFailure }
+
+  const span = operatingSpan(input.days)
+  if (span === null) throw new Error('unreachable: validateOperatingHours requires >=1 open day')
+
+  const bandsFailure = validateRateBands(input.bands, span)
+  if (bandsFailure !== null) return { ok: false, reason: bandsFailure }
+
+  try {
+    const courtId = await db.transaction(
+      async (tx) => {
+        const result = await tx.execute(sql`
+          insert into courts (branch_id, name, environment, surface)
+          values (
+            ${input.branchId}::uuid, ${input.fields.name},
+            ${input.fields.environment}::court_environment, ${input.fields.surface}
+          )
+          returning id
+        `)
+        const courtId = result.rows[0].id as string
+
+        for (const day of input.days) {
+          await tx.execute(sql`
+            insert into court_operating_hours (court_id, day_of_week, opens_hour, closes_hour)
+            values (${courtId}::uuid, ${day.dayOfWeek}, ${day.opensHour}, ${day.closesHour})
+          `)
+        }
+        for (const band of input.bands) {
+          await tx.execute(sql`
+            insert into court_rate_bands (court_id, start_hour, end_hour, price_centavos)
+            values (
+              ${courtId}::uuid, ${band.startHour}, ${band.endHour}, ${band.priceCentavos}
+            )
+          `)
+        }
+
+        return courtId
+      },
+      { isolationLevel: 'read committed' },
+    )
+    return { ok: true, courtId }
+  } catch (error) {
+    if (sqlStateOf(error) === PG_FOREIGN_KEY_VIOLATION) {
+      return { ok: false, reason: 'branch_missing' }
+    }
+    throw error
+  }
+}
+
 export type CourtWriteResult =
   | { ok: true; requeued: boolean }
   | { ok: false; reason: 'not_found' | 'no_operating_hours' | HoursFailure | BandsFailure }

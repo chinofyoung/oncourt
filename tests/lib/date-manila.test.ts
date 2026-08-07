@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   isValidCalendarDate,
+  manilaDateOf,
+  manilaHourOf,
   manilaToday,
   manilaWeekday,
   shiftDay,
@@ -65,5 +67,33 @@ describe('isValidCalendarDate', () => {
 describe('manilaToday', () => {
   it('returns a valid YYYY-MM-DD date', () => {
     expect(isValidCalendarDate(manilaToday())).toBe(true)
+  })
+})
+
+describe('manilaDateOf', () => {
+  it('matches manilaToday when applied to "now"', () => {
+    // Both read the same instant; manilaToday is manilaDateOf(new Date()).
+    const now = new Date()
+    expect(manilaDateOf(now)).toBe(manilaToday())
+  })
+
+  it('reads the Manila calendar date, not the UTC one, near the day boundary', () => {
+    // 2026-08-01T23:30:00Z is already 2026-08-02T07:30 in Manila (+8h).
+    expect(manilaDateOf(new Date('2026-08-01T23:30:00Z'))).toBe('2026-08-02')
+  })
+})
+
+describe('manilaHourOf', () => {
+  it('reads the Manila wall-clock hour for a UTC instant', () => {
+    // 10:00 UTC is 18:00 Manila (+8h) — the exact instant class the booking
+    // bug this function was added for hinges on (webhook.ts's `ends_at <=
+    // now()` gate, mirrored by createHold/loadBranchDay's new elapsed-hour
+    // guard).
+    expect(manilaHourOf(new Date('2026-08-01T10:00:00Z'))).toBe(18)
+  })
+
+  it('rolls over past the Manila day boundary, not the UTC one', () => {
+    // 23:30 UTC on Aug 1 is 07:30 Manila on Aug 2 -> hour 7, not 23.
+    expect(manilaHourOf(new Date('2026-08-01T23:30:00Z'))).toBe(7)
   })
 })

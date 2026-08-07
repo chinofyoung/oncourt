@@ -37,6 +37,12 @@ function messageFor(reason: FailureReason): string {
       return 'That court is not open for bookings right now.'
     case 'invalid_input':
       return "That date or time doesn't look right. Please refresh and try again."
+    case 'slot_elapsed':
+      // Mirrors the 'slot_taken' copy's shape deliberately: createHoldAction
+      // revalidates the venue path on every failure, so the grid the player
+      // sees next will already show this hour as past, same as it would show
+      // a just-taken hour as booked.
+      return 'Sorry, that time has already passed. The grid has been refreshed.'
     default: {
       const exhaustive: never = reason
       return exhaustive

@@ -2,6 +2,8 @@ import { sql } from 'drizzle-orm'
 import { expect, test } from 'vitest'
 import { db } from '@/db'
 import { buildAvailabilityGrid, loadBranchDay } from '@/lib/booking/availability'
+import { spinePriceCentavos } from '@/lib/booking/spine-price'
+import { manilaHourOf, manilaToday, shiftDay } from '@/lib/date-manila'
 import { manilaHour, seedBlock, seedBranchWithCourts } from '../helpers/fixtures'
 
 const INPUT = {
@@ -19,6 +21,10 @@ const INPUT = {
   },
   operatingHours: { c1: { opensHour: 11, closesHour: 24 }, c2: { opensHour: 14, closesHour: 20 } },
   occupiedHours: { c1: [18, 19] },
+  // Nothing has elapsed for any of these fixture tests: they are about
+  // operating hours, rate bands, and occupancy, not the clock. The
+  // elapsed-hour behavior itself gets its own tests below.
+  elapsedThroughHour: 0,
 }
 
 test('renders one column per court over the union of operating hours', () => {
@@ -77,6 +83,7 @@ test('a court open by hours but covered by no rate band at all is entirely close
     rateBands: {}, // no entry for c3 at all
     operatingHours: { c3: { opensHour: 10, closesHour: 14 } },
     occupiedHours: {},
+    elapsedThroughHour: 0,
   })
   expect(grid[0].cells.every((c) => c.state === 'closed')).toBe(true)
 })
@@ -119,6 +126,7 @@ test('the hour union spans every court window, not just the first court listed',
       x2: { opensHour: 15, closesHour: 20 },
     },
     occupiedHours: {},
+    elapsedThroughHour: 0,
   })
   // True union across both courts is 11:00-20:00 -> 9 hourly rows.
   expect(grid[0].cells).toHaveLength(9)
@@ -133,6 +141,62 @@ test('a fully booked day marks every open hour as booked, not just some', () => 
   })
   const courtOne = grid[0]
   expect(courtOne.cells.every((c) => c.state === 'booked')).toBe(true)
+})
+
+// Past-slot booking fix: an hour is unbookable once its END instant is at or
+// before now, mirroring webhook.ts's `ends_at <= now()` gate exactly. No
+// lead-time buffer. `elapsedThroughHour` means "hours strictly below this
+// number have fully ended" — loadBranchDay derives it from the DB's now(),
+// these pure tests exercise buildAvailabilityGrid directly with contrived
+// values so the boundary arithmetic is pinned independent of wall-clock time.
+
+test('at 18:47 Manila, the 17:00-18:00 hour is blocked but 18:00-19:00 stays bookable', () => {
+  // 18:47 Manila -> current Manila hour is 18 -> elapsedThroughHour: 18.
+  // Hour 17 ends at 18:00 (<= now): fully elapsed. Hour 18 ends at 19:00
+  // (> now): still in progress, still bookable. This is the exact boundary
+  // the user chose, so it is asserted literally rather than via a helper.
+  // occupiedHours cleared: INPUT's own c1:[18,19] would otherwise confound
+  // this with the separate booked/past precedence test below.
+  const grid = buildAvailabilityGrid({ ...INPUT, occupiedHours: {}, elapsedThroughHour: 18 })
+  const courtOne = grid[0] // c1: operating hours 11-24, band covers 17-24
+  expect(courtOne.cells.find((c) => c.hour === 17)!.state).toBe('past')
+  expect(courtOne.cells.find((c) => c.hour === 18)!.state).toBe('open')
+})
+
+test('a past date (elapsedThroughHour: 24) blocks every open hour', () => {
+  // occupiedHours cleared: this test is about the elapsed-hour rule in
+  // isolation, not about the booked/past precedence covered separately below.
+  const grid = buildAvailabilityGrid({ ...INPUT, occupiedHours: {}, elapsedThroughHour: 24 })
+  const courtOne = grid[0]
+  // c1's own window is 11-24 (hours 11..23); every one of those must be past.
+  const withinWindow = courtOne.cells.filter((c) => c.hour >= 11 && c.hour < 24)
+  expect(withinWindow.every((c) => c.state === 'past')).toBe(true)
+})
+
+test('a future date (elapsedThroughHour: 0) blocks nothing', () => {
+  const grid = buildAvailabilityGrid({ ...INPUT, elapsedThroughHour: 0 })
+  const courtOne = grid[0]
+  expect(courtOne.cells.some((c) => c.state === 'past')).toBe(false)
+  // The normal open/closed/booked states from the base fixture still apply.
+  expect(courtOne.cells.find((c) => c.hour === 12)!.state).toBe('open')
+  expect(courtOne.cells.find((c) => c.hour === 18)!.state).toBe('booked')
+})
+
+test('an occupied hour that has also elapsed still reads as booked, not past', () => {
+  // Precedence: booked (someone holds it) is more informative than past, and
+  // must never be visually or semantically demoted to 'past'.
+  const grid = buildAvailabilityGrid({ ...INPUT, elapsedThroughHour: 20 })
+  const courtOne = grid[0]
+  expect(courtOne.cells.find((c) => c.hour === 18)!.state).toBe('booked')
+  expect(courtOne.cells.find((c) => c.hour === 19)!.state).toBe('booked')
+})
+
+test('an hour outside the operating window that has also elapsed still reads as closed, not past', () => {
+  // c2's own window is 14-20; hour 11 is closed (before opening) regardless
+  // of the clock.
+  const grid = buildAvailabilityGrid({ ...INPUT, elapsedThroughHour: 24 })
+  const courtTwo = grid[1]
+  expect(courtTwo.cells.find((c) => c.hour === 11)!.state).toBe('closed')
 })
 
 test('loadBranchDay returns one column per approved court on a multi-court branch', async () => {
@@ -209,4 +273,117 @@ test('loadBranchDay marks a blocked hour as booked, not open', async () => {
   expect(cells.find((c) => c.hour === 14)!.state).toBe('booked')
   expect(cells.find((c) => c.hour === 15)!.state).toBe('booked')
   expect(cells.find((c) => c.hour === 16)!.state).toBe('open')
+})
+
+// Integration coverage for the DB-sourced `now()` wiring itself (the pure
+// tests above pin the arithmetic; these confirm loadBranchDay actually feeds
+// it the right elapsedThroughHour from the database's clock, not Node's).
+
+test('loadBranchDay for a past date marks every open-window hour as past', async () => {
+  const { slug } = await seedBranchWithCourts(1)
+  const yesterday = shiftDay(manilaToday(), -1)
+
+  const result = await loadBranchDay(slug, yesterday)
+  const cells = result!.grid[0].cells // fixture window/bands cover 11-24 every day
+  expect(cells.every((c) => c.state === 'past')).toBe(true)
+})
+
+test('loadBranchDay for a future date marks nothing as past', async () => {
+  const { slug } = await seedBranchWithCourts(1)
+  const tomorrow = shiftDay(manilaToday(), 1)
+
+  const result = await loadBranchDay(slug, tomorrow)
+  const cells = result!.grid[0].cells
+  expect(cells.some((c) => c.state === 'past')).toBe(false)
+  expect(cells.every((c) => c.state === 'open')).toBe(true)
+})
+
+test('loadBranchDay for today marks hours before the current Manila hour as past and the rest as still bookable', async () => {
+  // Reads the DB's own now() independently (never the Node clock, per
+  // webhook.ts REVIEW FIX C-1) so this assertion holds regardless of what
+  // time of day the suite happens to run.
+  const { slug } = await seedBranchWithCourts(1)
+  const today = manilaToday()
+  const nowRow = await db.execute(sql`select now() as db_now`)
+  const currentHour = manilaHourOf(new Date(nowRow.rows[0].db_now as string))
+
+  const result = await loadBranchDay(slug, today)
+  const cells = result!.grid[0].cells // fixture window is 11-24 every day
+
+  for (const cell of cells) {
+    if (cell.hour < currentHour) {
+      expect(cell.state).toBe('past')
+    } else {
+      expect(cell.state).not.toBe('past')
+    }
+  }
+})
+
+// spinePriceCentavos: whether a single price describes every bookable
+// (`open`) cell in one grid row, so the availability grid can show it once
+// in the time spine instead of repeating it per cell.
+
+test('spinePriceCentavos returns the shared price when every open cell agrees', () => {
+  const grid = buildAvailabilityGrid(INPUT)
+  // Hour 14: c1 open at 26500, c2 open at 26500.
+  const row = grid.map((col) => col.cells.find((c) => c.hour === 14)!)
+  expect(spinePriceCentavos(row)).toBe(26500)
+})
+
+test('spinePriceCentavos returns null when open cells disagree', () => {
+  const grid = buildAvailabilityGrid(INPUT)
+  // Hour 15: c1 crosses into its 36500 band, c2 is still 26500.
+  const row = grid.map((col) => col.cells.find((c) => c.hour === 15)!)
+  expect(spinePriceCentavos(row)).toBeNull()
+})
+
+test('spinePriceCentavos ignores closed cells and their placeholder zero price', () => {
+  // INPUT's own rate bands (c1: 11-15 then 15-24; c2: 11-24) happen to cover
+  // its entire union range (11-23) for BOTH courts, so every closed cell
+  // there is closed purely because it falls outside that court's operating
+  // window while still matching a rate band -- meaning it already carries a
+  // real, non-zero price (e.g. c2's hour 11 is closed but still prices at
+  // 26500 from its band). `band?.priceCentavos ?? 0` only falls back to the
+  // placeholder 0 when NO band matches the hour at all, which cannot happen
+  // anywhere in INPUT's union. This is a corrected assumption from the plan,
+  // which stated hour 11 gives c2 a placeholder-zero price; it does not.
+  // Custom fixture instead: c3 has no rate-band entry whatsoever, so its
+  // closed cells carry the literal placeholder 0, alongside c1 (from INPUT)
+  // open and priced normally at the same hour.
+  const grid = buildAvailabilityGrid({
+    date: '2026-08-15',
+    courts: [INPUT.courts[0], { courtId: 'c3', courtName: 'Court 3', environment: 'indoor' as const }],
+    rateBands: { c1: INPUT.rateBands.c1 }, // no entry for c3 at all
+    operatingHours: { c1: INPUT.operatingHours.c1, c3: { opensHour: 11, closesHour: 24 } },
+    occupiedHours: {},
+    elapsedThroughHour: 0,
+  })
+  const row = grid.map((col) => col.cells.find((c) => c.hour === 11)!)
+  expect(row.find((c) => c.state === 'closed')!.priceCentavos).toBe(0)
+  expect(spinePriceCentavos(row)).toBe(26500)
+})
+
+test('spinePriceCentavos ignores booked cells even when their price differs', () => {
+  // c1 hours 18-19 are occupied. Give c2 a different price so that counting
+  // the booked cell would change the answer, and confirm it does not.
+  const grid = buildAvailabilityGrid({
+    ...INPUT,
+    rateBands: {
+      c1: [{ startHour: 11, endHour: 24, priceCentavos: 99900 }],
+      c2: [{ startHour: 11, endHour: 24, priceCentavos: 26500 }],
+    },
+  })
+  const row = grid.map((col) => col.cells.find((c) => c.hour === 18)!)
+  expect(row.find((c) => c.state === 'booked')).toBeDefined()
+  expect(spinePriceCentavos(row)).toBe(26500)
+})
+
+test('spinePriceCentavos returns null when a row has no open cells', () => {
+  expect(spinePriceCentavos([])).toBeNull()
+  expect(
+    spinePriceCentavos([
+      { hour: 9, priceCentavos: 0, state: 'closed' },
+      { hour: 9, priceCentavos: 26500, state: 'past' },
+    ]),
+  ).toBeNull()
 })

@@ -1,9 +1,20 @@
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { manilaWeekday } from '@/lib/date-manila'
+import { manilaDateOf, manilaHourOf, manilaWeekday } from '@/lib/date-manila'
 import type { RateBand } from '@/lib/booking/pricing'
 
-export type CellState = 'open' | 'booked' | 'closed'
+// 'past' is distinct from 'closed': 'closed' means this court simply doesn't
+// operate at this hour (outside its window, or no rate band prices it) —
+// true regardless of the clock. 'past' means the hour WOULD be a real,
+// priced, open slot, except its end instant has already passed. Collapsing
+// the two into one visual state would be actively misleading whenever a
+// grid shows courts with different operating windows side by side: a
+// legitimately-closed cell for one court and an elapsed cell for another can
+// land in the same hour row, and a player has no way to tell "this court
+// never opens this early" apart from "this court's morning already happened"
+// if both render identically. See src/components/availability-grid.tsx for
+// the rendering, and design/branding.md's Availability grid entry.
+export type CellState = 'open' | 'booked' | 'closed' | 'past'
 export type GridCell = { hour: number; priceCentavos: number; state: CellState }
 export type GridColumn = {
   courtId: string
@@ -18,6 +29,17 @@ export type GridInput = {
   rateBands: Record<string, RateBand[]>
   operatingHours: Record<string, { opensHour: number; closesHour: number }>
   occupiedHours: Record<string, number[]>
+  // Hours strictly below this number have fully ENDED on `date` (an hour `h`
+  // spans [h, h+1), so it ends at h+1 — meaning it counts as elapsed once
+  // `h + 1 <= <current Manila hour>`, i.e. `h < elapsedThroughHour` when
+  // elapsedThroughHour IS the current Manila hour). This mirrors
+  // src/lib/payments/webhook.ts's handlePaidEvent `ends_at <= now()` gate
+  // exactly, so the availability grid and the payment webhook never
+  // disagree about whether a slot's time has already run out. No lead-time
+  // buffer: the in-progress hour stays bookable until its own end instant.
+  // loadBranchDay passes 24 for a past date (everything elapsed), 0 for a
+  // future date (nothing elapsed), and the current Manila hour for today.
+  elapsedThroughHour: number
 }
 
 /** Pure: no DB, no clock. Everything it needs is passed in, so it is trivially testable. */
@@ -38,12 +60,22 @@ export function buildAvailabilityGrid(input: GridInput): GridColumn[] {
       // its operating window AND has a rate band covering that hour — an
       // hour with no price to charge is not a real open slot.
       const isOpen = Boolean(window && hour >= window.opensHour && hour < window.closesHour && band)
+      const isPast = hour < input.elapsedThroughHour
 
-      return {
-        hour,
-        priceCentavos: band?.priceCentavos ?? 0,
-        state: !isOpen ? 'closed' : occupied.has(hour) ? 'booked' : 'open',
-      }
+      // Precedence matters: 'closed' wins over everything (it isn't a real
+      // slot regardless of the clock), 'booked' wins over 'past' (someone
+      // holding the slot is more informative than it merely having ended —
+      // this also covers a past date's confirmed/completed bookings, which
+      // are both occupied and elapsed at once).
+      const state: CellState = !isOpen
+        ? 'closed'
+        : occupied.has(hour)
+          ? 'booked'
+          : isPast
+            ? 'past'
+            : 'open'
+
+      return { hour, priceCentavos: band?.priceCentavos ?? 0, state }
     })
 
     return { ...court, cells }
@@ -60,14 +92,30 @@ export async function loadBranchDay(
   slug: string,
   date: string,
 ): Promise<{ branch: Record<string, unknown>; grid: GridColumn[] } | null> {
+  // `now()` rides along on this query rather than a separate round trip.
+  // Read from the DATABASE, not the Node process clock — a skewed JS clock
+  // would silently mis-gate bookings, same reasoning as
+  // src/lib/payments/webhook.ts's handlePaidEvent (REVIEW FIX C-1). Stripped
+  // out of `branch` below before it's returned, so callers never see it as
+  // an accidental extra field on the branch row.
   const branchRows = await db.execute(sql`
-    select id, name, slug, address, city from branches where slug = ${slug}
+    select id, name, slug, address, city, now() as db_now from branches where slug = ${slug}
   `)
-  const branch = branchRows.rows[0]
-  if (!branch) return null
+  const branchRow = branchRows.rows[0]
+  if (!branchRow) return null
+  const { db_now, ...branch } = branchRow as Record<string, unknown> & { db_now: string }
+  const dbNow = new Date(db_now)
 
   const branchId = branch.id as string
   const weekday = manilaWeekday(date)
+
+  // Hours strictly below this number have fully ended on `date` (see
+  // GridInput.elapsedThroughHour's doc comment for the exact boundary
+  // arithmetic). A past date has nothing left un-elapsed (24 blocks every
+  // hour 0-23); a future date has nothing elapsed yet (0 blocks none); today
+  // uses the DB's own current Manila hour.
+  const todayManila = manilaDateOf(dbNow)
+  const elapsedThroughHour = date < todayManila ? 24 : date > todayManila ? 0 : manilaHourOf(dbNow)
   const dayStart = new Date(`${date}T00:00:00+08:00`).toISOString()
   const dayEnd = new Date(`${date}T24:00:00+08:00`).toISOString()
 
@@ -189,6 +237,7 @@ export async function loadBranchDay(
     rateBands,
     operatingHours,
     occupiedHours,
+    elapsedThroughHour,
   })
 
   return { branch, grid }

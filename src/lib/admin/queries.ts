@@ -2,11 +2,11 @@ import 'server-only'
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
 import type { Role } from '@/lib/auth/guards'
-import { formatHourRange } from '@/lib/format'
 import type { CourtEnvironment } from '@/lib/listings/fields'
 import type { CourtStatus } from '@/lib/listings/status'
 import {
   courtScheduleWarning,
+  summarizeHours,
   type BandsFailure,
   type HoursFailure,
   type OperatingHoursDay,
@@ -79,29 +79,6 @@ export type AdminProfileLookup = {
   email: string
   fullName: string | null
   role: Role
-}
-
-/**
- * One line an admin can read at a glance, not a full timetable.
- *
- * Two shapes only: the common case (open every day on the same window) and
- * everything else (how many days, and the outer envelope those days span).
- * Deliberately NOT a per-weekday breakdown — that is what the owner's court
- * page is for, and the queue links to the branch for anyone who needs more.
- * The envelope is `[min(opens), max(closes)]`, which is the same span
- * validateRateBands tiles against, so a summary and a warning always describe
- * the same hours.
- */
-function summarizeHours(days: OperatingHoursDay[]): string {
-  if (days.length === 0) return 'No hours set'
-
-  const opens = Math.min(...days.map((day) => day.opensHour))
-  const closes = Math.max(...days.map((day) => day.closesHour))
-  const span = formatHourRange(opens, closes)
-  const sameWindow = days.every((day) => day.opensHour === opens && day.closesHour === closes)
-
-  if (days.length === 7 && sameWindow) return `${span} daily`
-  return `${days.length} ${days.length === 1 ? 'day' : 'days'} · ${span}`
 }
 
 export async function getAdminCourts(statuses: CourtStatus[]): Promise<AdminCourtRow[]> {

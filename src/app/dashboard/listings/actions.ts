@@ -25,12 +25,13 @@ import {
 } from '@/lib/listings/schedule'
 import {
   createBranch,
-  createCourt,
+  createCourtWithSchedule,
   replaceOperatingHours,
   replaceRateBands,
   updateBranch,
   updateCourtFields,
   type CourtWriteResult,
+  type CreateCourtWithScheduleResult,
 } from '@/lib/listings/write'
 import { addPhoto, deletePhoto, movePhoto, type PhotoTarget } from '@/lib/listings/photos'
 import { serviceRoleStorage } from '@/lib/listings/storage'
@@ -88,6 +89,24 @@ function courtWriteMessage(reason: Extract<CourtWriteResult, { ok: false }>['rea
   }
   // Narrowed to HoursFailure here and to BandsFailure below, so both message
   // maps are reused verbatim rather than restated — one wording per rule.
+  if (reason === 'no_open_day' || reason === 'invalid_window') {
+    return HOURS_FAILURE_MESSAGES[reason]
+  }
+  return BANDS_FAILURE_MESSAGES[reason]
+}
+
+/**
+ * Same vocabulary as courtWriteMessage, for createCourtWithSchedule's result
+ * shape. Kept as its own function rather than widening courtWriteMessage's
+ * parameter type: a brand-new court can fail on a missing branch (there is no
+ * court row yet to report `not_found` or `no_operating_hours` against), which
+ * is not a shape updateCourtFields/replaceOperatingHours/replaceRateBands can
+ * ever produce.
+ */
+function createCourtFailureMessage(
+  reason: Exclude<CreateCourtWithScheduleResult, { ok: true }>['reason'],
+): string {
+  if (reason === 'branch_missing') return 'That branch no longer exists.'
   if (reason === 'no_open_day' || reason === 'invalid_window') {
     return HOURS_FAILURE_MESSAGES[reason]
   }
@@ -158,6 +177,18 @@ export async function updateBranchAction(
   return { ok: true, message: SAVED }
 }
 
+/**
+ * Court details, opening hours, and rate bands, submitted together and
+ * written in one transaction (createCourtWithSchedule, src/lib/listings/
+ * write.ts) — the full form, not the "court fields only, then two more saves
+ * on the court's own page" shape this action used to have. Photos are the one
+ * exception: they need an existing court_id to upload against, so they stay
+ * on the court's own page, which is exactly where this redirects on success.
+ *
+ * Reuses parseCourtFields / parseOperatingHours / parseRateBands unchanged —
+ * the same parsers the edit page's three separate actions call — so a create
+ * and an edit can never disagree about what a valid schedule looks like.
+ */
 export async function createCourtAction(
   _prevState: ListingFormState,
   formData: FormData,
@@ -172,11 +203,22 @@ export async function createCourtAction(
     throw error
   }
 
-  const parsed = parseCourtFields(formData)
-  if (!parsed.ok) return { error: COURT_FIELDS_FAILURE_MESSAGES[parsed.reason] }
+  const parsedFields = parseCourtFields(formData)
+  if (!parsedFields.ok) return { error: COURT_FIELDS_FAILURE_MESSAGES[parsedFields.reason] }
 
-  const result = await createCourt({ branchId, fields: parsed.fields })
-  if (!result.ok) return { error: 'That branch no longer exists.' }
+  const parsedHours = parseOperatingHours(formData)
+  if (!parsedHours.ok) return { error: HOURS_FAILURE_MESSAGES[parsedHours.reason] }
+
+  const parsedBands = parseRateBands(formData)
+  if (!parsedBands.ok) return { error: BANDS_FAILURE_MESSAGES[parsedBands.reason] }
+
+  const result = await createCourtWithSchedule({
+    branchId,
+    fields: parsedFields.fields,
+    days: parsedHours.days,
+    bands: parsedBands.bands,
+  })
+  if (!result.ok) return { error: createCourtFailureMessage(result.reason) }
 
   revalidateListing(branchId)
   redirect(`/dashboard/listings/${branchId}/courts/${result.courtId}`)

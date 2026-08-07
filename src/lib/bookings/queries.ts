@@ -61,6 +61,30 @@ export type BookingReceipt = {
   transactionFeeCentavos: number
   totalChargedCentavos: number
   createdAt: string
+  /**
+   * True when at least one `payments` row for this booking carries a
+   * checkout session id — i.e. the player was actually sent to PayMongo at
+   * least once, and the outcome is (from our side) unknown. This is the
+   * evidence the receipt page uses to decide whether to actively reconcile
+   * a `pending_payment` booking: real database state, unlike the `?paid=1`
+   * redirect hint, which a player can lose (by navigating away) or forge,
+   * and which says nothing about whether a session was ever started.
+   */
+  hasCheckoutSession: boolean
+  /**
+   * True when at least one `payments` row for this booking is `status =
+   * 'paid'` AND `needs_refund = true` — a payment the webhook resolved (the
+   * player was charged) but that could not confirm the booking, so it owes a
+   * refund. `handlePaidEvent` (src/lib/payments/webhook.ts) writes both
+   * columns in the same statement whenever it accepts a payment for a
+   * booking it cannot confirm (e.g. the slot already ended), leaving the
+   * booking itself at `pending_payment` forever. Without this flag, that
+   * state is indistinguishable from "still waiting for the webhook" — both
+   * are a `pending_payment` booking with a `payments` row — so the receipt
+   * page would show a false "still confirming" message forever instead of
+   * surfacing the refund.
+   */
+  refundOwed: boolean
 }
 
 /**
@@ -225,6 +249,11 @@ export async function getPlayerDashboard(playerId: string): Promise<PlayerDashbo
  *
  * Not restricted to REAL_BOOKING: a receipt for an expired hold or a manually
  * refunded booking is a legitimate thing to look at.
+ *
+ * `has_checkout_session` and `refund_owed` both ride this same query
+ * (correlated `exists` subqueries, same pattern as `has_review` in
+ * getPlayerDashboard above) rather than a second round trip — see
+ * BookingReceipt's doc comments for why the receipt page needs each one.
  */
 export async function getBookingReceipt(
   bookingId: string,
@@ -236,6 +265,14 @@ export async function getBookingReceipt(
            c.name as court_name, c.environment,
            b.name as branch_name, b.slug as branch_slug,
            b.address as branch_address, b.city as branch_city,
+           exists (
+             select 1 from payments p
+             where p.booking_id = bk.id and p.provider_session_id is not null
+           ) as has_checkout_session,
+           exists (
+             select 1 from payments p
+             where p.booking_id = bk.id and p.status = 'paid' and p.needs_refund = true
+           ) as refund_owed,
            ${MANILA_PARTS}
     from bookings bk
     join courts c   on c.id = bk.court_id
@@ -262,5 +299,7 @@ export async function getBookingReceipt(
     transactionFeeCentavos: Number(row.transaction_fee_centavos),
     totalChargedCentavos: Number(row.total_charged_centavos),
     createdAt: new Date(row.created_at as string).toISOString(),
+    hasCheckoutSession: row.has_checkout_session === true,
+    refundOwed: row.refund_owed === true,
   }
 }

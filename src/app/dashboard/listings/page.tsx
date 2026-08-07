@@ -74,7 +74,17 @@ export default async function ListingsPage() {
             : 'No branches are shared with you for court management yet.'}
         </p>
       ) : (
-        <ul className="mb-8 grid grid-cols-2 gap-4 max-[980px]:grid-cols-1">
+        // auto-fill/minmax instead of a fixed column count or a new
+        // max-[…] breakpoint: the dashboard content column is fluid (248px
+        // sidebar + flexible remainder, see src/app/dashboard/layout.tsx),
+        // so a hardcoded column count would be right for one viewport and
+        // wrong for the rest. 280px keeps 3 columns down through the
+        // 980px sidebar-stack point, landing each card within a few px of
+        // branch-card.tsx's ~359px rendered width in results-grid.tsx's
+        // 1120px-capped, 3-column public grid — the "regular card" size
+        // this page is matching — while still packing more columns in on
+        // wide monitors instead of stretching cards further.
+        <ul className="mb-8 grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
           {branches.map((branch) => {
             const cover = photoUrl('branch-photos', branch.coverPhotoPath)
             const hasCourts = COURT_STATUSES.some((status) => branch.courtCounts[status] > 0)
@@ -137,16 +147,26 @@ export default async function ListingsPage() {
                     )}
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-4 p-5">
+                  {/*
+                    Proportions match branch-card.tsx's body (px-5 pt-[18px]
+                    pb-5, text-lg title, text-[13px] meta) now that this card
+                    renders at roughly the same width — the old p-5 +
+                    horizontal title/Edit pairing was sized for the wide
+                    two-per-row layout this replaces. The Edit button moves
+                    below the meta/status row instead of sitting beside it;
+                    at this width there's no longer room for both without
+                    wrapping.
+                  */}
+                  <div className="px-5 pt-[18px] pb-5">
                     <div className="min-w-0">
-                      <div className="font-display text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
+                      <div className="font-display text-lg font-bold tracking-[-0.015em] text-[var(--ink)]">
                         {branch.name}
                       </div>
-                      <div className="font-mono mt-1 text-[11px] tracking-[.12em] text-[var(--ink-soft)] uppercase">
+                      <div className="mt-[5px] text-[13px] text-[var(--ink-soft)]">
                         {branch.city} · {branch.photoCount}{' '}
                         {branch.photoCount === 1 ? 'photo' : 'photos'}
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                         {COURT_STATUSES.filter((status) => branch.courtCounts[status] > 0).map(
                           (status) => (
                             <span
@@ -168,7 +188,7 @@ export default async function ListingsPage() {
                     <Link
                       href={`/dashboard/listings/${branch.id}`}
                       aria-label={`Edit ${branch.name}`}
-                      className={`relative z-10 ${BORDERED_BUTTON}`}
+                      className={`relative z-10 mt-3.5 ${BORDERED_BUTTON}`}
                     >
                       Edit
                     </Link>

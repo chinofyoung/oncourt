@@ -2,9 +2,12 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireDashboardPage } from '@/lib/auth/page-guards'
 import { branchIdsWith } from '@/lib/staff/access'
-import { getListingBranch } from '@/lib/listings/queries'
+import { SCHEDULE_BLOCK_MESSAGES } from '@/lib/admin/moderation'
+import { formatPriceRange } from '@/lib/format'
+import { getListingBranch, type ListingCourtSummary } from '@/lib/listings/queries'
 import { COURT_STATUS_LABELS } from '@/lib/listings/status'
 import { AmenityChip } from '@/components/ui/amenity-chip'
+import { photoUrl } from '@/lib/photos'
 import { EditBranchForm } from './branch-detail-forms'
 import { PhotoManager } from '../photo-forms'
 
@@ -26,6 +29,15 @@ const LIME_BUTTON =
   `font-display inline-flex h-[var(--btn-h)] items-center rounded-[var(--btn-radius)] bg-[var(--ball)] px-5 text-[14px] font-bold text-[var(--ball-ink)] transition-[filter] duration-150 hover:brightness-[1.06] motion-reduce:transition-none ${FOCUS_RING}`
 
 const CARD = 'rounded-[20px] bg-[var(--panel)] p-5 shadow-[var(--shadow-sm)]'
+
+// Only the Courts tab's empty state uses this now that the court grid sits
+// directly on --surface instead of inside a CARD-classed section — matches
+// src/app/dashboard/listings/page.tsx's own EMPTY_PANEL for the mirror-image
+// "no branches yet" case, and src/components/search/results-grid.tsx's "no
+// courts here yet" panel.
+const EMPTY_PANEL =
+  'rounded-[20px] border border-dashed border-[var(--hairline)] bg-[var(--panel)] px-6 py-12 text-center text-[var(--ink-soft)]'
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const TABS = ['details', 'courts'] as const
@@ -184,123 +196,168 @@ export default async function BranchDetailPage({
       )}
 
       {tab === 'courts' && (
-        <div className="flex flex-col gap-6">
-          <section aria-label="Courts" className={CARD}>
-            {/* Same header-row treatment as EditBranchForm's "Branch
-                details"/"Save branch" row on the Details tab: h2 left,
-                primary action top-right. "Add court" is a plain navigation
-                Link rather than a form submit, so — unlike that row — it
-                needs no `pending` state and this section stays a Server
-                Component. */}
-            <div className="mb-4 flex items-start justify-between gap-4 max-[560px]:flex-col max-[560px]:items-stretch">
-              <h2 className="font-display text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
-                Courts
-              </h2>
-              {access.isOwner && (
-                <Link
-                  href={`/dashboard/listings/${branch.id}/courts/new`}
-                  className={`${LIME_BUTTON} max-[560px]:w-full max-[560px]:justify-center`}
-                >
-                  Add court
-                </Link>
-              )}
-            </div>
-            {branch.courts.length === 0 ? (
-              <p className="text-[13px] text-[var(--ink-soft)]">
-                No courts here yet
-                {access.isOwner ? ' — add the first one above.' : '.'}
-              </p>
-            ) : (
-              // Each court is a card, not a row: auto-fill/minmax rather than
-              // a fixed column count, so the grid reflows on its own instead
-              // of a hardcoded column count being cramped or wasteful at
-              // different widths. The floor was 220px when this grid lived in
-              // a half-width column; now that Courts is a full-width tab
-              // panel, 220px would pack in enough columns to make the cards
-              // (which now also carry an Edit button) feel squeezed on a wide
-              // monitor, so it's raised to 260px.
-              <ul className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-                {branch.courts.map((court) => (
-                  <li key={court.id}>
-                    {/* Cards nested inside the "Courts" card: branding.md's
-                        card recipe (white panel, shadow-sm, hover lift) is
-                        for top-level cards sitting on --surface, and a
-                        shadowed card stacked on a shadowed card just reads as
-                        mush. A --hairline border on the shared --btn-radius
-                        token — the same treatment BORDERED_BUTTON and the
-                        other bordered controls in this codebase already use —
-                        reads as "nested" without inventing a second visual
-                        language; hover swaps the border to --court instead of
-                        lifting the card.
-
-                        The card is now a plain <div>, not a Link: it needs an
-                        independently-clickable Edit button, and nesting an
-                        <a> inside an <a> is invalid HTML. Instead this
-                        follows src/app/dashboard/listings/page.tsx's
-                        stretched-link pattern — an `absolute inset-0` Link
-                        covers the whole tile as the card-wide click target,
-                        carrying an sr-only accessible name, and the Edit
-                        Link below is a POSITIONED sibling (`relative z-10`)
-                        that paints above it and intercepts its own clicks. */}
-                    <div
-                      className={`relative flex h-full flex-col gap-2 rounded-[var(--btn-radius)] border border-[var(--hairline)] p-4 transition-colors hover:border-[var(--court)]`}
-                    >
-                      <Link
-                        href={`/dashboard/listings/${branch.id}/courts/${court.id}`}
-                        className={`absolute inset-0 rounded-[var(--btn-radius)] ${FOCUS_RING}`}
-                      >
-                        <span className="sr-only">
-                          {court.name}, {COURT_STATUS_LABELS[court.status]}
-                        </span>
-                      </Link>
-                      <div className="min-w-0">
-                        <p className="text-[14px] font-semibold text-[var(--ink)]">
-                          {court.name}
-                        </p>
-                        <div className="font-mono mt-1 text-[10.5px] tracking-[.1em] text-[var(--ink-soft)] uppercase">
-                          {court.environment}
-                          {court.surface ? ` · ${court.surface}` : ''}
-                        </div>
-                      </div>
-                      {/* self-start, not shrink-0-in-a-row: this pill is
-                          today's only status signal, but courts moving to
-                          branch-level approval is a live discussion, so the
-                          pill stays a plain stacked child rather than
-                          something the card's layout leans on structurally —
-                          it can drop out later without reworking the card. */}
-                      <span className="font-mono self-start rounded-full bg-[var(--band-off)] px-2.5 py-1 text-[10.5px] tracking-[.05em] text-[var(--court-deep)] uppercase">
-                        {COURT_STATUS_LABELS[court.status]}
-                      </span>
-                      {/* The rejection reason belongs on the list, not only on
-                          the court page: it is the one thing an owner scanning
-                          their branch has to act on. */}
-                      {court.status === 'rejected' && court.rejectionReason && (
-                        <p className="text-[12.5px] text-[var(--ink)]">
-                          <span className="font-semibold">Changes needed:</span>{' '}
-                          {court.rejectionReason}
-                        </p>
-                      )}
-                      {/* Every court gets an Edit button regardless of
-                          status — a rejected court is exactly the one that
-                          most needs editing, so gating this on `pending`
-                          would be a confusing affordance. mt-auto pins it to
-                          the bottom of the card so it lands in the same place
-                          whether or not a rejection reason grew the card. */}
-                      <Link
-                        href={`/dashboard/listings/${branch.id}/courts/${court.id}`}
-                        aria-label={`Edit ${court.name}`}
-                        className={`relative z-10 mt-auto self-start ${BORDERED_BUTTON}`}
-                      >
-                        Edit
-                      </Link>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+        // No CARD wrapper here: branding.md's entity-card standard says a
+        // card grid sits directly on --surface, never nested inside another
+        // card's padding/shadow (a shadowed tile inside a shadowed panel
+        // reads as mush — the exact problem the old --hairline "nested card"
+        // treatment was papering over). The "Courts" h2 and "Add court"
+        // button move up to a plain header row instead of a card header.
+        <section aria-label="Courts" className="flex flex-col gap-4">
+          {/* Same header-row treatment as EditBranchForm's "Branch
+              details"/"Save branch" row on the Details tab: h2 left,
+              primary action top-right. "Add court" is a plain navigation
+              Link rather than a form submit, so — unlike that row — it
+              needs no `pending` state and this section stays a Server
+              Component. */}
+          <div className="flex items-start justify-between gap-4 max-[560px]:flex-col max-[560px]:items-stretch">
+            <h2 className="font-display text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
+              Courts
+            </h2>
+            {access.isOwner && (
+              <Link
+                href={`/dashboard/listings/${branch.id}/courts/new`}
+                className={`${LIME_BUTTON} max-[560px]:w-full max-[560px]:justify-center`}
+              >
+                Add court
+              </Link>
             )}
-          </section>
-        </div>
+          </div>
+          {branch.courts.length === 0 ? (
+            <p className={EMPTY_PANEL}>
+              No courts here yet
+              {access.isOwner ? ' — add the first one above.' : '.'}
+            </p>
+          ) : (
+            // auto-fill/minmax, floor 280px: same reasoning and same value as
+            // src/app/dashboard/listings/page.tsx's branch grid, which this
+            // court grid is now sized to match — the "regular card" size the
+            // entity-card standard uses everywhere else on this page.
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+              {branch.courts.map((court) => (
+                <li key={court.id}>
+                  <CourtCard court={court} branchId={branch.id} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
     </>
+  )
+}
+
+/**
+ * One court, per branding.md's entity-card standard: cover photo, title,
+ * meta line, status pill, whole-card stretched link, Edit button as a
+ * positioned sibling. Mirrors src/app/dashboard/listings/page.tsx's branch
+ * card structure exactly, now that both live directly on --surface.
+ */
+function CourtCard({ court, branchId }: { court: ListingCourtSummary; branchId: string }) {
+  const cover = photoUrl('court-photos', court.coverPhotoPath)
+  // A pending court legitimately has no bands yet — scheduleWarning already
+  // flags that further down, so this just needs to not print a broken
+  // "₱NaN – ₱NaN/hr". Same wording as src/app/admin/page.tsx so the two
+  // surfaces agree.
+  const priceLabel =
+    court.minPriceCentavos === null
+      ? 'No rates set'
+      : formatPriceRange(court.minPriceCentavos, court.maxPriceCentavos!)
+  // The identical rule approveCourt() refuses on, reused verbatim from the
+  // admin queue's copy (src/lib/admin/moderation.ts): its phrasing is a plain
+  // factual statement ("This court has no rates yet, so it can't go live.")
+  // rather than an instruction aimed at the admin, so it reads fine to the
+  // owner too — no separate owner-facing copy needed.
+  const scheduleMessage =
+    court.scheduleWarning === null ? null : SCHEDULE_BLOCK_MESSAGES[court.scheduleWarning]
+
+  return (
+    <div className="group relative overflow-hidden rounded-[20px] bg-[var(--panel)] shadow-[var(--shadow-sm)] transition-[transform,box-shadow] duration-[220ms] ease-[cubic-bezier(0.2,0.7,0.3,1)] hover:-translate-y-1 hover:shadow-[var(--shadow-lg)] motion-reduce:transform-none motion-reduce:transition-none">
+      <Link
+        href={`/dashboard/listings/${branchId}/courts/${court.id}`}
+        className={`absolute inset-0 ${FOCUS_RING}`}
+      >
+        <span className="sr-only">
+          {court.name}, {COURT_STATUS_LABELS[court.status]}
+        </span>
+      </Link>
+
+      {/* No `relative` here, same reasoning as the branch card's cover
+          wrapper: a positioned sibling AFTER the stretched link paints above
+          it in DOM order, so a positioned cover would create a dead click
+          zone over the whole photo. */}
+      <div className="aspect-[16/10] overflow-hidden">
+        {cover ? (
+          /* eslint-disable-next-line @next/next/no-img-element -- the bucket
+             is public and this is an already-sized upload; next/image would
+             add a loader round trip for a dashboard card. */
+          <img
+            src={cover}
+            alt=""
+            className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.2,0.7,0.3,1)] group-hover:scale-[1.045] motion-reduce:transform-none motion-reduce:transition-none"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-[var(--band-off)]">
+            <span aria-hidden className="font-display text-[40px] font-bold text-[var(--court-deep)]">
+              {court.name.charAt(0).toUpperCase()}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="px-5 pt-[18px] pb-5">
+        <div className="min-w-0">
+          <div className="font-display text-lg font-bold tracking-[-0.015em] text-[var(--ink)]">
+            {court.name}
+          </div>
+          <div className="font-mono mt-[5px] text-[10.5px] tracking-[.1em] text-[var(--ink-soft)] uppercase">
+            {court.environment}
+            {court.surface ? ` · ${court.surface}` : ''}
+          </div>
+          {/* Price + hours in one mono line — the two facts an owner scans
+              for, kept to the single line branding.md's mono treatment for
+              prices/times calls for rather than a two-row fact list. */}
+          <div className="font-mono mt-2 text-[12.5px] text-[var(--ink)]">
+            {priceLabel} · {court.hoursSummary}
+          </div>
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <span className="font-mono rounded-full bg-[var(--band-off)] px-2.5 py-1 text-[10.5px] tracking-[.05em] text-[var(--court-deep)] uppercase">
+              {COURT_STATUS_LABELS[court.status]}
+            </span>
+          </div>
+          {/* The readiness signal — the exact rule approveCourt() refuses on
+              — gets its own boxed callout rather than sitting inside the
+              plain fact lines above: it is the one fact on this card that is
+              actionable ("fix this or it can never go live"), so it needs to
+              read as distinct from the descriptive ones, not buried among
+              them. `--booked` is a neutral, already-defined token (no
+              dedicated alert color exists in branding.md), so this reads as a
+              flagged block without introducing a new hue. */}
+          {scheduleMessage && (
+            <p className="mt-2.5 rounded-[10px] bg-[var(--booked)] px-2.5 py-2 text-[12px] font-semibold text-[var(--ink)]">
+              {scheduleMessage}
+            </p>
+          )}
+          {/* The rejection reason belongs on the list, not only on the court
+              page: it is the one thing an owner scanning their branch has to
+              act on. */}
+          {court.status === 'rejected' && court.rejectionReason && (
+            <p className="mt-2.5 text-[12.5px] text-[var(--ink)]">
+              <span className="font-semibold">Changes needed:</span> {court.rejectionReason}
+            </p>
+          )}
+        </div>
+
+        {/* Every court gets an Edit button regardless of status — a rejected
+            court is exactly the one that most needs editing, so gating this
+            on status would be a confusing affordance. */}
+        <Link
+          href={`/dashboard/listings/${branchId}/courts/${court.id}`}
+          aria-label={`Edit ${court.name}`}
+          className={`relative z-10 mt-3.5 ${BORDERED_BUTTON}`}
+        >
+          Edit
+        </Link>
+      </div>
+    </div>
   )
 }

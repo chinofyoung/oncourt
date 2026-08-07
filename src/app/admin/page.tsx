@@ -15,7 +15,19 @@ const FOCUS_RING =
 // photo has to sit edge-to-edge above the padded body (branch-card.tsx's
 // pattern), so the padding that used to live on the outer article now lives
 // only on the body wrapper.
+//
+// Deliberately no hover-lift, no image zoom, and no whole-card stretched
+// link, unlike every other entity card in the app (documented as an allowed
+// variant in branding.md's Entity cards section): this card hosts several
+// independent controls at once — approve/reject or suspend forms, a "View
+// branch" link — so there is no single destination a whole-card click could
+// mean. Only those explicit interactive elements respond to hover/focus,
+// the same reasoning that keeps a page panel un-lifted.
 const CARD = 'overflow-hidden rounded-[20px] bg-[var(--panel)] shadow-[var(--shadow-sm)]'
+// p-6 (max-[560px]:p-5), not the standard entity-card px-5 pt-[18px] pb-5:
+// this body carries substantially more (price line, fact list, forms, link)
+// than a plain title+meta card, and the tighter padding read cramped
+// against that much content — also documented in branding.md.
 const CARD_BODY = 'p-6 max-[560px]:p-5'
 const KICKER = 'font-mono text-[10.5px] tracking-[.12em] text-[var(--ink-soft)] uppercase'
 const EMPTY_PANEL =
@@ -145,7 +157,16 @@ function CourtCard({ court, live }: { court: AdminCourtRow; live: boolean }) {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={cover} alt={court.name} className="h-full w-full object-cover" />
         ) : (
-          <div className="h-full w-full bg-[var(--band-off)]" />
+          // Initial-letter fallback, per branding.md's entity-card standard —
+          // matches the branch/court cards' placeholder instead of a bare
+          // color block. No hover-zoom pairing here (see the card's own note
+          // on why it has no hover-lift at all): this is a static fallback
+          // regardless.
+          <div className="flex h-full w-full items-center justify-center bg-[var(--band-off)]">
+            <span aria-hidden className="font-display text-[40px] font-bold text-[var(--court-deep)]">
+              {court.name.charAt(0).toUpperCase()}
+            </span>
+          </div>
         )}
       </div>
 
@@ -155,7 +176,7 @@ function CourtCard({ court, live }: { court: AdminCourtRow; live: boolean }) {
             <h2 className="font-display text-[18px] font-bold tracking-[-0.015em] text-[var(--ink)]">
               {court.name} — {court.branchName}
             </h2>
-            <p className="mt-1 text-[13px] text-[var(--ink-soft)]">
+            <p className="mt-[5px] text-[13px] text-[var(--ink-soft)]">
               {/* An owner promoted by hand may have no business name yet, so the
                   email is the fallback rather than an empty space. */}
               {court.ownerBusinessName ?? court.ownerEmail} · {court.branchCity}

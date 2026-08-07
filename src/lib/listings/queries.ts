@@ -5,6 +5,7 @@ import type { CourtEnvironment } from '@/lib/listings/fields'
 import type { CourtStatus } from '@/lib/listings/status'
 import {
   courtScheduleWarning,
+  summarizeHours,
   type BandsFailure,
   type HoursFailure,
   type OperatingHoursDay,
@@ -50,6 +51,32 @@ export type ListingCourtSummary = {
   surface: string | null
   status: CourtStatus
   rejectionReason: string | null
+  /**
+   * `court_photos.storage_path` for the lowest `sort_order` row, tie-broken
+   * by id so the cover never shuffles between renders if two photos share a
+   * sort_order — same rule and same reason as branches' coverPhotoPath below
+   * and src/lib/admin/queries.ts's identical subquery for courts. Null means
+   * the court has no photos yet; the card falls back to an initial-letter
+   * placeholder rather than treating this as an error.
+   */
+  coverPhotoPath: string | null
+  /**
+   * Min/max of `court_rate_bands.price_centavos`, both null together when the
+   * court has no bands yet — same rule and same reason as
+   * src/lib/admin/queries.ts's `AdminCourtRow.minPriceCentavos`. Derived from
+   * `bandsByCourt` below rather than a third query — the bands are already in
+   * hand.
+   */
+  minPriceCentavos: number | null
+  maxPriceCentavos: number | null
+  hoursSummary: string
+  /**
+   * Non-null when this court's rate bands do not exactly tile its opening
+   * hours — the identical rule approveCourt() refuses on, so a court showing
+   * this on its own card is one the admin queue will reject. Same field name
+   * and meaning as `AdminCourtRow.scheduleWarning`.
+   */
+  scheduleWarning: HoursFailure | BandsFailure | null
 }
 
 export type ListingBranch = {
@@ -153,12 +180,63 @@ export async function getListingBranch(branchId: string): Promise<ListingBranch 
     order by sort_order, id
   `)
 
+  // Cover photo as a correlated scalar subquery, same pattern as branches'
+  // cover_photo_path above and src/lib/admin/queries.ts's identical subquery
+  // for courts: an index lookup on court_photos_court_id_idx over one
+  // court's (usually handful of) photos, ordered and limited to the winner.
   const courts = await db.execute(sql`
-    select id, name, environment::text as environment, surface,
-           status::text as status, rejection_reason
-    from courts where branch_id = ${branchId}::uuid
-    order by name, id
+    select c.id, c.name, c.environment::text as environment, c.surface,
+           c.status::text as status, c.rejection_reason,
+           (select p.storage_path from court_photos p where p.court_id = c.id
+             order by p.sort_order, p.id limit 1) as cover_photo_path
+    from courts c where c.branch_id = ${branchId}::uuid
+    order by c.name, c.id
   `)
+
+  // Two bulk follow-ups keyed by court id, NOT one query per row — same
+  // reasoning as src/lib/admin/queries.ts's getAdminCourts: the schedule
+  // warning and hours summary have to be computed in TypeScript
+  // (courtScheduleWarning/summarizeHours are the shared, pure rules), so the
+  // rows have to come back, but they come back in two round trips regardless
+  // of how many courts this branch has. Skipped entirely when the branch has
+  // no courts yet.
+  const courtIds = courts.rows.map((court) => court.id as string)
+  const daysByCourt = new Map<string, OperatingHoursDay[]>()
+  const bandsByCourt = new Map<string, RateBand[]>()
+
+  if (courtIds.length > 0) {
+    const hourRows = await db.execute(sql`
+      select court_id, day_of_week, opens_hour, closes_hour from court_operating_hours
+      where court_id = any (${sql.param(courtIds)}::uuid[])
+      order by court_id, day_of_week
+    `)
+    for (const hourRow of hourRows.rows) {
+      const courtId = hourRow.court_id as string
+      const days = daysByCourt.get(courtId) ?? []
+      days.push({
+        dayOfWeek: Number(hourRow.day_of_week),
+        opensHour: Number(hourRow.opens_hour),
+        closesHour: Number(hourRow.closes_hour),
+      })
+      daysByCourt.set(courtId, days)
+    }
+
+    const bandRows = await db.execute(sql`
+      select court_id, start_hour, end_hour, price_centavos from court_rate_bands
+      where court_id = any (${sql.param(courtIds)}::uuid[])
+      order by court_id, start_hour
+    `)
+    for (const bandRow of bandRows.rows) {
+      const courtId = bandRow.court_id as string
+      const bands = bandsByCourt.get(courtId) ?? []
+      bands.push({
+        startHour: Number(bandRow.start_hour),
+        endHour: Number(bandRow.end_hour),
+        priceCentavos: Number(bandRow.price_centavos),
+      })
+      bandsByCourt.set(courtId, bands)
+    }
+  }
 
   return {
     id: row.id as string,
@@ -173,14 +251,32 @@ export async function getListingBranch(branchId: string): Promise<ListingBranch 
     lat: row.lat === null ? null : Number(row.lat),
     lng: row.lng === null ? null : Number(row.lng),
     photos: photos.rows.map(toPhoto),
-    courts: courts.rows.map((court) => ({
-      id: court.id as string,
-      name: court.name as string,
-      environment: court.environment as CourtEnvironment,
-      surface: (court.surface as string | null) ?? null,
-      status: court.status as CourtStatus,
-      rejectionReason: (court.rejection_reason as string | null) ?? null,
-    })),
+    courts: courts.rows.map((court) => {
+      const courtId = court.id as string
+      const days = daysByCourt.get(courtId) ?? []
+      const bands = bandsByCourt.get(courtId) ?? []
+      // Both null together: a court with no rate bands yet has no price to
+      // show, not a zero one — Math.min/max of an empty array is
+      // Infinity/-Infinity, which is why this branches on bands.length
+      // rather than feeding the empty array through. Same guard as
+      // getAdminCourts.
+      const prices = bands.map((band) => band.priceCentavos)
+      const minPriceCentavos = prices.length > 0 ? Math.min(...prices) : null
+      const maxPriceCentavos = prices.length > 0 ? Math.max(...prices) : null
+      return {
+        id: courtId,
+        name: court.name as string,
+        environment: court.environment as CourtEnvironment,
+        surface: (court.surface as string | null) ?? null,
+        status: court.status as CourtStatus,
+        rejectionReason: (court.rejection_reason as string | null) ?? null,
+        coverPhotoPath: (court.cover_photo_path as string | null) ?? null,
+        minPriceCentavos,
+        maxPriceCentavos,
+        hoursSummary: summarizeHours(days),
+        scheduleWarning: courtScheduleWarning(days, bands),
+      }
+    }),
   }
 }
 
