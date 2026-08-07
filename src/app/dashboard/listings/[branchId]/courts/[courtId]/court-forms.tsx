@@ -332,63 +332,74 @@ export function RateBandsForm({ courtId, bands }: { courtId: string; bands: Rate
         {rows.map((row, index) => (
           <li
             key={row.key}
-            className={`flex flex-wrap items-end gap-3 py-2.5 ${
+            className={`flex flex-wrap items-start gap-3 py-2.5 ${
               index > 0 ? 'border-t border-[var(--hairline)]' : ''
             }`}
           >
-            <div>
-              <label className={LABEL} htmlFor={`band-start-${index}-${courtId}`}>
-                From
-              </label>
-              <HourSelect
-                id={`band-start-${index}-${courtId}`}
-                name="bandStart"
-                value={row.startHour}
-                onChange={(startHour) => updateRow(index, { startHour })}
-                min={0}
-                max={23}
-              />
+            {/* From + Until grouped into one flex item (was two loose items in
+                the row's own flex-wrap) so a narrow container — this row now
+                also renders inside the half-width "Rates" column beside
+                Opening hours — wraps as two clean sub-groups instead of
+                breaking apart mid-pair. Ungrouped, the four controls wrapped
+                one at a time and could strand "Until" alone between "From"
+                and the price field. */}
+            <div className="flex items-end gap-3">
+              <div>
+                <label className={LABEL} htmlFor={`band-start-${index}-${courtId}`}>
+                  From
+                </label>
+                <HourSelect
+                  id={`band-start-${index}-${courtId}`}
+                  name="bandStart"
+                  value={row.startHour}
+                  onChange={(startHour) => updateRow(index, { startHour })}
+                  min={0}
+                  max={23}
+                />
+              </div>
+              <div>
+                <label className={LABEL} htmlFor={`band-end-${index}-${courtId}`}>
+                  Until
+                </label>
+                <HourSelect
+                  id={`band-end-${index}-${courtId}`}
+                  name="bandEnd"
+                  value={row.endHour}
+                  onChange={(endHour) => updateRow(index, { endHour })}
+                  min={1}
+                  max={24}
+                />
+              </div>
             </div>
-            <div>
-              <label className={LABEL} htmlFor={`band-end-${index}-${courtId}`}>
-                Until
-              </label>
-              <HourSelect
-                id={`band-end-${index}-${courtId}`}
-                name="bandEnd"
-                value={row.endHour}
-                onChange={(endHour) => updateRow(index, { endHour })}
-                min={1}
-                max={24}
-              />
+            <div className="flex items-end gap-3">
+              <div className="w-[132px]">
+                <label className={LABEL} htmlFor={`band-price-${index}-${courtId}`}>
+                  Price per hour
+                </label>
+                <input
+                  id={`band-price-${index}-${courtId}`}
+                  name="bandPrice"
+                  type="number"
+                  min={1}
+                  step={1}
+                  inputMode="numeric"
+                  required
+                  value={row.pesos}
+                  onChange={(event) => updateRow(index, { pesos: event.target.value })}
+                  placeholder="265"
+                  className={`font-mono ${FIELD}`}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => removeRow(index)}
+                disabled={rows.length === 1}
+                aria-label={`Remove the band starting at ${formatHour(row.startHour)}`}
+                className={BORDERED_BUTTON}
+              >
+                Remove
+              </button>
             </div>
-            <div className="w-[132px]">
-              <label className={LABEL} htmlFor={`band-price-${index}-${courtId}`}>
-                Price per hour
-              </label>
-              <input
-                id={`band-price-${index}-${courtId}`}
-                name="bandPrice"
-                type="number"
-                min={1}
-                step={1}
-                inputMode="numeric"
-                required
-                value={row.pesos}
-                onChange={(event) => updateRow(index, { pesos: event.target.value })}
-                placeholder="265"
-                className={`font-mono ${FIELD}`}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => removeRow(index)}
-              disabled={rows.length === 1}
-              aria-label={`Remove the band starting at ${formatHour(row.startHour)}`}
-              className={BORDERED_BUTTON}
-            >
-              Remove
-            </button>
           </li>
         ))}
       </ul>

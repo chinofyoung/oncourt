@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { seedBlock, seedBooking, seedBranchWithCourts, seedPlayer, teardownFixtures } from '../helpers/fixtures'
+import { manilaHour, seedBlock, seedBooking, seedBranchWithCourts, seedPlayer, teardownFixtures } from '../helpers/fixtures'
 import { getBookingReceipt, getPlayerDashboard } from '@/lib/bookings/queries'
 
 afterAll(teardownFixtures)
@@ -249,4 +249,29 @@ test('a block never appears on any player surface', async () => {
   expect(dashboard.past).toEqual([])
   expect(dashboard.stats.upcomingCount).toBe(0)
   expect(dashboard.stats.totalSpentCentavos).toBe(0)
+})
+
+test('getBookingReceipt returns an unpaid hold, with its pending_payment status', async () => {
+  // The receipt page branches on exactly this: `pending_payment` + `?paid=1`
+  // renders the confirming banner, `pending_payment` alone renders "finish
+  // paying". A receipt restricted to REAL_BOOKING would make both branches
+  // unreachable, so this pins that it is not.
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+  const bookingId = await seedBooking({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    startsAt: manilaHour('2026-12-20', 18),
+    status: 'pending_payment',
+    totalCentavos: 100_000,
+  })
+
+  const receipt = await getBookingReceipt(bookingId, playerId)
+  expect(receipt).toMatchObject({
+    id: bookingId,
+    status: 'pending_payment',
+    courtFeeCentavos: 100_000,
+    totalChargedCentavos: 100_000,
+  })
 })

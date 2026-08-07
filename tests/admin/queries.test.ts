@@ -55,8 +55,10 @@ test('getAdminCourts returns the facts an admin needs to moderate without leavin
     // the email rather than printing "null".
     ownerBusinessName: null,
     ownerEmail: await emailOf(ownerId),
-    photoCount: 1,
-    bandCount: 3,
+    coverPhotoPath: `courts/${courtIds[0]}/a.jpg`,
+    // seedBranchWithCourts' fixture bands are 26500/31500/36500 centavos.
+    minPriceCentavos: 26500,
+    maxPriceCentavos: 36500,
     // The fixture court is open 11-24 all week. formatHourRange(11, 24) is
     // "11 – 12 AM" (both ends land in AM, so the period prints once) — this
     // asserts the app's real formatter, not a prettier hypothetical one.
@@ -64,6 +66,58 @@ test('getAdminCourts returns the facts an admin needs to moderate without leavin
     scheduleWarning: null,
   })
   expect(rows[0].addedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+})
+
+test('getAdminCourts picks the lowest sort_order photo as the cover, tie-broken by id', async () => {
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  await setStatus(courtIds[0], 'pending')
+  // Inserted out of order, and with two rows sharing sort_order 0, so this
+  // only passes if the query orders by (sort_order, id) rather than by
+  // insertion order or sort_order alone.
+  await db.execute(sql`
+    insert into court_photos (court_id, storage_path, sort_order)
+    values (${courtIds[0]}::uuid, ${`courts/${courtIds[0]}/later.jpg`}, 1)
+  `)
+  const tieA = await db.execute(sql`
+    insert into court_photos (court_id, storage_path, sort_order)
+    values (${courtIds[0]}::uuid, ${`courts/${courtIds[0]}/tie-a.jpg`}, 0)
+    returning id
+  `)
+  const tieB = await db.execute(sql`
+    insert into court_photos (court_id, storage_path, sort_order)
+    values (${courtIds[0]}::uuid, ${`courts/${courtIds[0]}/tie-b.jpg`}, 0)
+    returning id
+  `)
+  const tieWinner = [
+    { id: tieA.rows[0].id as string, path: `courts/${courtIds[0]}/tie-a.jpg` },
+    { id: tieB.rows[0].id as string, path: `courts/${courtIds[0]}/tie-b.jpg` },
+  ].sort((a, b) => (a.id < b.id ? -1 : 1))[0]
+
+  const rows = await forBranch(['pending'], branchId)
+  expect(rows[0].coverPhotoPath).toBe(tieWinner.path)
+})
+
+test('getAdminCourts leaves the cover photo and price range null with no photos or bands', async () => {
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  await setStatus(courtIds[0], 'pending')
+  await db.execute(sql`delete from court_rate_bands where court_id = ${courtIds[0]}::uuid`)
+
+  const rows = await forBranch(['pending'], branchId)
+  expect(rows[0].coverPhotoPath).toBeNull()
+  expect(rows[0].minPriceCentavos).toBeNull()
+  expect(rows[0].maxPriceCentavos).toBeNull()
+})
+
+test('getAdminCourts reports a single price, not a range, for a court with one band', async () => {
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  await setStatus(courtIds[0], 'pending')
+  await db.execute(sql`
+    delete from court_rate_bands where court_id = ${courtIds[0]}::uuid and start_hour != 11
+  `)
+
+  const rows = await forBranch(['pending'], branchId)
+  expect(rows[0].minPriceCentavos).toBe(26500)
+  expect(rows[0].maxPriceCentavos).toBe(26500)
 })
 
 test('getAdminCourts carries the same schedule warning that blocks approval', async () => {
@@ -75,7 +129,11 @@ test('getAdminCourts carries the same schedule warning that blocks approval', as
 
   const rows = await forBranch(['pending'], branchId)
   expect(rows[0].scheduleWarning).toBe('bands_do_not_tile')
-  expect(rows[0].bandCount).toBe(2)
+  // The remaining two bands (11-15 @ 26500, 17-24 @ 36500) still span the same
+  // min/max as the full three-band fixture — this asserts the price range is
+  // computed from whatever bands exist, not hardcoded to the fixture's count.
+  expect(rows[0].minPriceCentavos).toBe(26500)
+  expect(rows[0].maxPriceCentavos).toBe(36500)
 })
 
 test('getAdminCourts summarizes a partial week and an empty one', async () => {

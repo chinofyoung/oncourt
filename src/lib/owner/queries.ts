@@ -66,12 +66,19 @@ export type OwnerEarningsRow = {
   bookingCount: number
   grossCentavos: number
   platformFeeCentavos: number
+  processorFeeCentavos: number
   netCentavos: number
 }
 export type OwnerEarnings = {
   month: string
   rows: OwnerEarningsRow[]
-  totals: { bookingCount: number; grossCentavos: number; platformFeeCentavos: number; netCentavos: number }
+  totals: {
+    bookingCount: number
+    grossCentavos: number
+    platformFeeCentavos: number
+    processorFeeCentavos: number
+    netCentavos: number
+  }
 }
 
 /**
@@ -452,6 +459,16 @@ export async function getOwnerBookings(
  * never became real revenue. Blocks never appear: they are excluded by
  * REAL_BOOKING, and bookings_blocked_is_free guarantees they carry no money to
  * leak even if that filter were widened.
+ *
+ * processor_fee_centavos here is what the OWNER PAID, not what the processor
+ * charged: it's 0 for the `platform` bearer, since that fee is carved out of
+ * the platform's own margin (see platformRetainedCentavos in
+ * src/lib/payments/fees.ts). That's what keeps
+ * gross = platform_fee + processor_fee + net true per booking, and therefore
+ * under SUM across branches/months even with mixed bearers. The CASE is
+ * deny-by-default — mirroring bearerFromSnapshot's posture — so an
+ * unrecognized bearer value is NOT treated as owner/player-borne and can't
+ * silently double-count itself into the fee.
  */
 export async function getOwnerEarnings(branchIds: string[], month: string): Promise<OwnerEarnings> {
   const result = await db.execute(sql`
@@ -459,6 +476,7 @@ export async function getOwnerEarnings(branchIds: string[], month: string): Prom
       count(*)::int as booking_count,
       coalesce(sum(bk.total_charged_centavos), 0)::bigint as gross_centavos,
       coalesce(sum(bk.platform_fee_centavos), 0)::bigint as platform_fee_centavos,
+      coalesce(sum(case when coalesce(bk.fee_config_snapshot->>'bearer', 'platform') not in ('owner', 'player') then 0 else bk.processor_fee_centavos end), 0)::bigint as processor_fee_centavos,
       coalesce(sum(bk.owner_net_centavos), 0)::bigint as net_centavos
     from bookings bk
     join branches b on b.id = bk.branch_id
@@ -475,6 +493,7 @@ export async function getOwnerEarnings(branchIds: string[], month: string): Prom
     bookingCount: Number(row.booking_count),
     grossCentavos: Number(row.gross_centavos),
     platformFeeCentavos: Number(row.platform_fee_centavos),
+    processorFeeCentavos: Number(row.processor_fee_centavos),
     netCentavos: Number(row.net_centavos),
   }))
 
@@ -483,9 +502,16 @@ export async function getOwnerEarnings(branchIds: string[], month: string): Prom
       bookingCount: acc.bookingCount + row.bookingCount,
       grossCentavos: acc.grossCentavos + row.grossCentavos,
       platformFeeCentavos: acc.platformFeeCentavos + row.platformFeeCentavos,
+      processorFeeCentavos: acc.processorFeeCentavos + row.processorFeeCentavos,
       netCentavos: acc.netCentavos + row.netCentavos,
     }),
-    { bookingCount: 0, grossCentavos: 0, platformFeeCentavos: 0, netCentavos: 0 },
+    {
+      bookingCount: 0,
+      grossCentavos: 0,
+      platformFeeCentavos: 0,
+      processorFeeCentavos: 0,
+      netCentavos: 0,
+    },
   )
 
   return { month, rows, totals }

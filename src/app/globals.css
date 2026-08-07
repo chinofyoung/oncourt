@@ -72,3 +72,35 @@ body {
   color: var(--ink);
   font-family: var(--font-sans);
 }
+
+@layer base {
+  /* Tailwind v4's preflight deliberately reverted buttons to the browser
+     default `cursor: default` (v3 forced `cursor: pointer`), so every
+     <button> in the app rendered with an arrow instead of a hand. Put the
+     pointer back once, here, rather than sprinkling `cursor-pointer` on
+     individual components — two files had already started doing that
+     (src/app/dashboard/listings/form-ui.tsx,
+     src/app/dashboard/staff/staff-forms.tsx) and it doesn't scale.
+     Anchors with an href already get a pointer from the UA stylesheet.
+     `:not(:disabled)` keeps disabled controls on the default arrow, which
+     is the correct affordance — they aren't clickable.
+     Labels only get the pointer when they actually toggle something: a
+     `for=` label or one wrapping a checkbox/radio is a click target, but a
+     label sitting above a text field is not. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  select:not(:disabled),
+  label[for],
+  label:has(> input:is([type="checkbox"], [type="radio"])),
+  input:is(
+      [type="checkbox"],
+      [type="radio"],
+      [type="submit"],
+      [type="button"],
+      [type="reset"],
+      [type="file"]
+    ):not(:disabled) {
+    cursor: pointer;
+  }
+}

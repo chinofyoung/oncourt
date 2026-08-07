@@ -29,15 +29,19 @@ const FOCUS_RING =
  * role="menu" would promise arrow-key semantics that then have to be built and
  * maintained. It is a disclosure (aria-expanded) over ordinary links.
  *
- * An admin gets an Admin item ALONGSIDE the owner dashboard link, not instead
- * of it: the two answer different questions ("my own branches" vs "everyone
- * else's courts"), and /dashboard genuinely works for an admin — its queries
- * filter on owner_id, so they see only what they own there.
+ * An admin gets the Admin item ONLY, not the owner dashboard link too
+ * (2026-08-07 user ruling, reversing an earlier "alongside it" decision):
+ * /dashboard's queries do filter on owner_id, so an admin who is also an owner
+ * would technically only see their own branches there, but that "technically
+ * still correct" case is not the point — the menu is answering "what are you,
+ * here", and surfacing /dashboard next to /admin makes it look like an admin
+ * is still acting as an owner day to day, which is not the intended framing.
  *
- * Item visibility is role-derived: an owner (or admin) loses "My bookings"
- * (they can never have one), and a player holding >= 1 branch_staff grant
- * gains "Venue dashboard" alongside it. `isStaff` is resolved server-side in
- * <Nav> — a client component like this one cannot query the database.
+ * Item visibility is role-derived: an owner or admin loses "My bookings" (they
+ * can never have one, and /bookings redirects them straight back to
+ * /dashboard), and a player holding >= 1 branch_staff grant gains "Venue
+ * dashboard" alongside it. `isStaff` is resolved server-side in <Nav> — a
+ * client component like this one cannot query the database.
  */
 export function AccountMenu({ user, onDark }: { user: AccountMenuUser; onDark: boolean }) {
   const [open, setOpen] = useState(false)
@@ -68,16 +72,18 @@ export function AccountMenu({ user, onDark }: { user: AccountMenuUser; onDark: b
     }
   }, [open])
 
-  const isOwner = user.role === 'owner' || user.role === 'admin'
-  // Owners can never have bookings, so "My bookings" would always be empty for
-  // them and /bookings redirects them away anyway.
-  const showBookings = !isOwner
+  const isOwner = user.role === 'owner'
+  const isAdmin = user.role === 'admin'
+  // Owners and admins can never have bookings, so "My bookings" would always
+  // be empty for them and /bookings redirects both straight back to
+  // /dashboard anyway.
+  const showBookings = !isOwner && !isAdmin
   // Staff get the same dashboard, under a name that describes what they are
   // seeing: they do not own the venue, they work at it. Null means no
-  // dashboard item at all — a plain player has no dashboard to go to, and an
-  // item pointing somewhere that redirects straight back is worse than none.
+  // dashboard item at all — a plain player has no dashboard to go to, an
+  // item pointing somewhere that redirects straight back is worse than none,
+  // and an admin gets the Admin item below instead (see the comment above).
   const dashboardLabel = isOwner ? 'Owner dashboard' : user.isStaff ? 'Venue dashboard' : null
-  const isAdmin = user.role === 'admin'
   const label = user.fullName ?? user.email
   const initial = (user.fullName ?? user.email).charAt(0).toUpperCase()
 

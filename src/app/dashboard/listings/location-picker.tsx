@@ -60,7 +60,13 @@ export function LocationPicker({
   }
 
   return (
-    <fieldset className="flex flex-col gap-2">
+    // --pin-map-h is the single source of truth for PinMap's height (read via
+    // h-[var(--pin-map-h,_240px)] in pin-map.tsx and pin-map-dynamic.tsx, so
+    // the live map and its loading skeleton can never drift apart). Tall here
+    // because BranchFieldset gives this fieldset a whole sticky column to
+    // fill; short again once max-[980px] collapses that column back under
+    // the fields, matching branding.md's stack breakpoint.
+    <fieldset className="flex flex-col gap-2 [--pin-map-h:520px] max-[980px]:[--pin-map-h:240px]">
       <legend className={LABEL}>Map location</legend>
 
       <input type="hidden" name="lat" value={pin === null ? '' : String(pin.lat)} />

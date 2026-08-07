@@ -42,7 +42,7 @@ import { LOGO_BUCKET } from '@/lib/owner/settings'
 // for at most one visible court) and states the built app
 // (src/components/availability-grid.tsx) is authoritative wherever it and
 // the mockup disagree. That component, the "Book a court" section below, and
-// the date-nav/`?held=` handling are carried over verbatim from the previous
+// the date-nav handling are carried over verbatim from the previous
 // version of this file.
 //
 // The location block renders a real single-pin Leaflet map (`BranchMap`,
@@ -62,10 +62,10 @@ import { LOGO_BUCKET } from '@/lib/owner/settings'
 // the defect this fix round corrects.
 export default async function BranchPage(props: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ date?: string; held?: string }>
+  searchParams: Promise<{ date?: string }>
 }) {
   const { slug } = await props.params
-  const { date, held } = await props.searchParams
+  const { date } = await props.searchParams
   // Falls back to today rather than 404ing — a mistyped or stale `?date=`
   // is a harmless typo on a public page, not a broken resource.
   const day = date && isValidCalendarDate(date) ? date : manilaToday()
@@ -90,15 +90,6 @@ export default async function BranchPage(props: {
       <Nav variant="solid" />
 
       <main className="flex flex-col gap-8 bg-[var(--surface)] px-[max(24px,calc((100vw-1120px)/2))] py-10">
-        {held && (
-          <p
-            role="status"
-            className="rounded-[var(--btn-radius)] border border-[var(--hairline)] bg-[var(--band-off)] px-4 py-3 text-sm text-[var(--court-deep)]"
-          >
-            Slot on hold — go ahead and pay to confirm it before the hold expires.
-          </p>
-        )}
-
         <div className="grid grid-cols-1 items-start gap-8 min-[980px]:grid-cols-[360px_1fr]">
           {/* ============ Left rail: venue identity ============ */}
           <section aria-label="Venue details" className="flex flex-col gap-4">

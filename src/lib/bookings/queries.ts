@@ -84,8 +84,14 @@ const REAL_BOOKING = sql`bk.status in ('confirmed', 'completed')`
  * (startHour: 23, endHour: 0) and sending `endHour - startHour` negative
  * downstream (e.g. the receipt page). Treating exact local midnight as hour
  * 24 of the day that just ended fixes this without affecting any other hour.
+ *
+ * Exported since the payments slice: the checkout page and the checkout write
+ * need the identical Manila-local date/hour extraction, including the
+ * midnight special case below. A second copy would eventually disagree with
+ * this one, and the hour it disagreed on would be the last bookable hour of
+ * the day — the one nobody tests by hand.
  */
-const MANILA_PARTS = sql`
+export const MANILA_PARTS = sql`
   to_char(bk.starts_at at time zone 'Asia/Manila', 'YYYY-MM-DD') as date,
   extract(hour from (bk.starts_at at time zone 'Asia/Manila'))::int as start_hour,
   case

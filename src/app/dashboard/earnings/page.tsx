@@ -77,22 +77,25 @@ export default async function OwnerEarningsPage({
         </h1>
       </header>
 
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <Link href={`/dashboard/earnings?month=${shiftMonth(month, -1)}`} className={NAV_LINK}>
           ← Prev
         </Link>
         <span className="font-mono text-[13.5px] font-semibold whitespace-nowrap text-[var(--ink)]">
           {formatMonthLabel(month)}
         </span>
+        <span className="text-[13px] whitespace-nowrap text-[var(--ink-soft)]">
+          · {totals.bookingCount} {totals.bookingCount === 1 ? 'booking' : 'bookings'}
+        </span>
         <Link href={`/dashboard/earnings?month=${shiftMonth(month, 1)}`} className={NAV_LINK}>
           Next →
         </Link>
       </div>
 
-      <div className="mb-6 grid grid-cols-4 gap-4 max-[980px]:grid-cols-2">
-        <StatCard kicker="Bookings" value={String(totals.bookingCount)} />
+      <div className="mb-6 grid grid-cols-4 gap-4 max-[980px]:grid-cols-2 max-[560px]:grid-cols-1">
         <StatCard kicker="Gross" value={formatPeso(totals.grossCentavos)} />
         <StatCard kicker="Platform fee" value={formatPeso(totals.platformFeeCentavos)} />
+        <StatCard kicker="Processor fee" value={formatPeso(totals.processorFeeCentavos)} />
         <StatCard kicker="Net" value={formatPeso(totals.netCentavos)} />
       </div>
 
@@ -103,13 +106,18 @@ export default async function OwnerEarningsPage({
           query. No separate empty-state message is added: the StatCards
           above and the tfoot below already read as all zeros. */}
       <div className="overflow-x-auto rounded-[20px] bg-[var(--panel)] shadow-[var(--shadow-sm)]">
-        <table className="w-full min-w-[560px] border-collapse text-left">
+        <table className="w-full min-w-[680px] border-collapse text-left">
+          <caption className="caption-top px-5 pt-4 pb-1 text-left text-[13px] text-[var(--ink-soft)]">
+            Processor fee is the share of your gross taken by the payment processor — ₱0 when the
+            platform covers it from its own fee.
+          </caption>
           <thead>
             <tr className="font-mono border-b border-[var(--hairline)] text-[11px] tracking-[.1em] text-[var(--ink-soft)] uppercase">
               <th className="py-3 pr-4 pl-5 font-normal">Branch</th>
               <th className="py-3 pr-4 text-right font-normal">Bookings</th>
               <th className="py-3 pr-4 text-right font-normal">Gross</th>
               <th className="py-3 pr-4 text-right font-normal">Platform fee</th>
+              <th className="py-3 pr-4 text-right font-normal">Processor fee</th>
               <th className="py-3 pr-5 text-right font-normal">Net</th>
             </tr>
           </thead>
@@ -125,6 +133,9 @@ export default async function OwnerEarningsPage({
                 </td>
                 <td className="font-mono py-4 pr-4 text-right text-[13.5px] whitespace-nowrap text-[var(--ink)]">
                   {formatPeso(row.platformFeeCentavos)}
+                </td>
+                <td className="font-mono py-4 pr-4 text-right text-[13.5px] whitespace-nowrap text-[var(--ink)]">
+                  {formatPeso(row.processorFeeCentavos)}
                 </td>
                 <td className="font-mono py-4 pr-5 text-right text-[13.5px] whitespace-nowrap text-[var(--ink)]">
                   {formatPeso(row.netCentavos)}
@@ -143,6 +154,9 @@ export default async function OwnerEarningsPage({
               </td>
               <td className="font-mono py-4 pr-4 text-right text-[13.5px] whitespace-nowrap text-[var(--ink)]">
                 {formatPeso(totals.platformFeeCentavos)}
+              </td>
+              <td className="font-mono py-4 pr-4 text-right text-[13.5px] whitespace-nowrap text-[var(--ink)]">
+                {formatPeso(totals.processorFeeCentavos)}
               </td>
               <td className="font-mono py-4 pr-5 text-right text-[13.5px] whitespace-nowrap text-[var(--ink)]">
                 {formatPeso(totals.netCentavos)}

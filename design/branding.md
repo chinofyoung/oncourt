@@ -64,6 +64,7 @@ Headline scale: h1 68px (desktop) / 44px / 38px (mobile); section h2 30px; card 
 - Buttons: display font, weight 700, `inline-flex; align-items: center`, height from token, horizontal padding only.
 - Primary action: lime (`--ball` bg, `--ball-ink` text). On light panels a dark button (`--ink` bg, `--ball` text) is the alternative primary. Never two lime buttons in one view.
 - Focus: `outline: 2px solid var(--ball); outline-offset: 3px` on dark, `var(--court)` on light.
+- Cursor: everything clickable shows `cursor: pointer` on hover — buttons, `role="button"`, `<summary>`, selects, checkboxes/radios and their labels. Disabled controls keep the default arrow (they aren't clickable), and labels above text fields stay default (they aren't a click target). This is a **single base rule in `src/app/globals.css`**, not a per-component class: Tailwind v4's preflight reverted buttons to the browser default `cursor: default` (v3 forced pointer), so without that rule every button in the app renders with an arrow. Don't re-add `cursor-pointer` component by component.
 - Non-interactive chips/badges stay pill-shaped (`border-radius: 999px`) to distinguish them from buttons.
 
 ## Components
@@ -74,9 +75,35 @@ Headline scale: h1 68px (desktop) / 44px / 38px (mobile); section h2 30px; card 
 - **Availability grid** (signature component): time rows × court columns; the time spine is a plain mono time column (sticky-left), **not** tinted by rate band — an earlier version of this doc specified a shared off-peak/peak tint on that column (a `--band-peak` token), but the real data model has rate bands *per court*, not per branch, so two courts in the same grid can define different band edges (or even a different count of bands) for the same hour. A single shared tint column would be correct for at most one of the visible courts and misleading for the rest, so it was dropped rather than shipped inaccurate (see `src/lib/booking/availability.ts`/`src/components/availability-grid.tsx`, task-9-report.md fix round 1). Open cells show their price in mono; booked cells flat `--booked`; selected cells lime with 1.5px ink border and court-corner tick marks (7×7px, 2px strokes, top-left + bottom-right).
 
   **Mockups vs. built app:** several files in `design/mockups/` (`admin-approvals.html`, `branch-page.html`, `checkout.html`, `index.html`, `owner-dashboard.html`, `player-dashboard.html`, `search-results.html`) still define `--band-peak` and/or render the tinted time-spine this entry describes as dropped — `branch-page.html` in particular still visibly renders it. Those mockups predate this change and were not updated when it landed; they are intentionally left as-is (not edited as part of this fix) rather than treated as a design decision to re-litigate. Where a mockup and the built app disagree on this point, **the built app is authoritative** — go by `src/components/availability-grid.tsx`, not the mockup HTML.
+- **Nested cards** (a card grid inside another card, e.g. the courts grid inside a branch's "Courts" card): skip the panel/shadow card recipe above — a shadowed card on top of a shadowed card reads as mush. Use a `--hairline` border on the `--btn-radius` token instead (the same treatment `BORDERED_BUTTON` and the other bordered controls already use), hover border to `--court`.
+- **Tab strip:** a `<nav>` of plain links, not `role="tab"`/`aria-selected` — these tabs navigate to a URL (`?tab=`), they don't toggle a panel in place, so link semantics plus `aria-current="page"` on the active one is the honest choice. Underline style: `font-display` weight 700, 2px bottom border, active tab `border-[var(--ink)] text-[var(--ink)]`, inactive `border-transparent text-[var(--ink-soft)]` hovering to `--ink`, the row sitting on a `--hairline` bottom border. See `src/app/bookings/page.tsx` and `src/app/dashboard/listings/[branchId]/page.tsx`.
 - **Rating:** lime dot (7px, ink outline) + bold number, count in parens muted.
 - **Maps:** Leaflet + CARTO Positron light tiles (`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png`, the `light_all` basemap). The two-tone look is produced by an inline SVG duotone filter applied to `.leaflet-tile-pane`: a `feColorMatrix` reduces the tile image to luminance, feeding a `feComponentTransfer` whose per-channel `feFuncR`/`feFuncG`/`feFuncB` lookup tables remap that luminance into two brand tones — dark tile values map to `--court-deep`, light tile values map to `--band-off`. It's applied via CSS as exactly `filter: url(#duotone) contrast(1.06)` on `.leaflet-tile-pane`. Exact tableValues, so the filter is reproducible from this doc alone: feFuncR `0.078 0.918`, feFuncG `0.239 0.949`, feFuncB `0.173 0.894`. Markers live in Leaflet's marker pane, a sibling of (outside) the tile pane, so the filter does not apply to them — markers stay untinted; price markers are pills: white bg, `--ink` text, mono 12px, `--shadow-sm`, 999px radius, active/hover inverts to `--ball` bg with a 1.5px `--ink` border. Attribution stays legible. **Warning:** container-level blend-mode overlays do NOT work with Leaflet — `.leaflet-map-pane` sits at z-index 400 on the map container, so any overlay is either fully below the map or fully above the markers and can never tint the tiles.
 - **Live indicator:** small pulsing dot + mono uppercase label (respect `prefers-reduced-motion`).
+- **Forms with a map** (e.g. the branch form): two columns above 980px, fields
+  left, map on its own `sticky` right column so pinning a location doesn't
+  require scrolling away from the map; collapses to one column at 980px, map
+  back in normal flow at a short height. The dashboard shell (sidebar + fluid
+  content, no 1120px cap — that column rule is for marketing/public pages
+  only) means the map column gets a `minmax()` width cap rather than an `fr`
+  share, so it doesn't balloon on a wide monitor. The primary form action sits
+  top-right of the form's own header row — the page header when a page has
+  one form, the card header next to its `<h2>` when the page has several —
+  not buried below the fold; since `pending` state lives in the client form
+  component, the header moves there too wherever it needs to read it. A
+  top-right card-header button that only *navigates* to another page (e.g.
+  "Add court" opening its own add-court page) needs no `pending` state and no
+  client component — it stays a plain `Link` in the Server Component header,
+  same row treatment, no move required. The
+  same 980px collapse and `items-start` (cards size to their own content,
+  not the tallest sibling) generalize to plain card grids on wide dashboard
+  pages too, not just forms; unlike the map column there's no natural
+  minmax cap for card content, so an even `fr` split is the default there.
+  Reach for that pairing only when a page really has two cards' worth of
+  content side by side — the branch page briefly paired photos against
+  courts and then dropped it once a tab strip moved courts elsewhere,
+  leaving one card alone in a half-width column. Prefer tabs over columns
+  when the sections are separate concerns rather than a single view.
 
 ## Photography
 

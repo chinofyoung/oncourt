@@ -128,6 +128,10 @@ created by hand-run SQL.
   'admin'` via the `ADMIN_EMAILS` callback promotion — unchanged.
 - Nav/account menu: admins get an "Admin" item (they already get the owner
   dashboard link; admin link sits beside it).
+  **Amended during execution (2026-08-07, user ruling):** an admin does NOT
+  get the owner dashboard link at all — only the "Admin" item. This reverses
+  the "beside it" decision above; see the doc comment on `AccountMenu` in
+  `src/components/site/account-menu.tsx` for the rationale.
 
 ### Approval queue (`/admin` home)
 

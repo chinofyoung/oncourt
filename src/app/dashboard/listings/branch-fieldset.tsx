@@ -59,126 +59,146 @@ export function BranchFieldset({
   const [city, setCity] = useState(defaults?.city ?? '')
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
-        <div>
-          <label className={LABEL} htmlFor={`${idPrefix}-name`}>
-            Branch name
-          </label>
-          <input
-            id={`${idPrefix}-name`}
-            name="name"
-            required
-            maxLength={MAX_BRANCH_NAME}
-            defaultValue={defaults?.name ?? ''}
-            placeholder="Smash Zone Marikina"
-            className={FIELD}
-          />
-        </div>
-        <div>
-          <label className={LABEL} htmlFor={`${idPrefix}-city`}>
-            City
-          </label>
-          <input
-            id={`${idPrefix}-city`}
-            name="city"
-            required
-            maxLength={MAX_CITY}
-            value={city}
-            onChange={(event) => setCity(event.target.value)}
-            placeholder="Marikina"
-            className={FIELD}
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className={LABEL} htmlFor={`${idPrefix}-address`}>
-          Street address
-        </label>
-        <input
-          id={`${idPrefix}-address`}
-          name="address"
-          required
-          maxLength={MAX_ADDRESS}
-          value={address}
-          onChange={(event) => setAddress(event.target.value)}
-          placeholder="12 Shoe Ave, Barangay Sto. Niño"
-          className={FIELD}
-        />
-      </div>
-
-      <div>
-        <label className={LABEL} htmlFor={`${idPrefix}-description`}>
-          Description
-        </label>
-        <textarea
-          id={`${idPrefix}-description`}
-          name="description"
-          rows={3}
-          maxLength={MAX_DESCRIPTION}
-          defaultValue={defaults?.description ?? ''}
-          placeholder="What players should know before they arrive."
-          className={TEXTAREA}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
-        <div>
-          <label className={LABEL} htmlFor={`${idPrefix}-phone`}>
-            Contact phone
-          </label>
-          <input
-            id={`${idPrefix}-phone`}
-            name="contactPhone"
-            maxLength={MAX_PHONE}
-            defaultValue={defaults?.contactPhone ?? ''}
-            placeholder="0917 000 0000"
-            className={FIELD}
-          />
-        </div>
-        <div>
-          <label className={LABEL} htmlFor={`${idPrefix}-email`}>
-            Contact email
-          </label>
-          <input
-            id={`${idPrefix}-email`}
-            name="contactEmail"
-            type="email"
-            maxLength={MAX_EMAIL}
-            defaultValue={defaults?.contactEmail ?? ''}
-            placeholder="desk@example.com"
-            className={FIELD}
-          />
-        </div>
-      </div>
-
-      <fieldset>
-        <legend className={LABEL}>Amenities</legend>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {AMENITY_SLUGS.map((amenity) => (
-            <label key={amenity} className={CHECK_LABEL} htmlFor={`${idPrefix}-${amenity}`}>
-              <input
-                id={`${idPrefix}-${amenity}`}
-                type="checkbox"
-                name="amenities"
-                value={amenity}
-                defaultChecked={amenities.includes(amenity)}
-                className={CHECKBOX}
-              />
-              {AMENITY_LABELS[amenity]}
+    // Two columns above 980px: fields on the left, the map on its own sticky
+    // column on the right so pinning a location doesn't require scrolling
+    // away from the map. The dashboard content column is fluid (no max-width
+    // — see new/page.tsx and [branchId]/page.tsx, both full-width), so an
+    // fr/fr split would let the map balloon to hundreds of extra pixels on a
+    // wide monitor for no benefit. Instead the right column is capped
+    // (`minmax(360px,480px)`) and the left column absorbs whatever width is
+    // left — the fields get the room to breathe, the map stays a comfortably
+    // large square-ish target for pinning without growing pointlessly.
+    // `items-start` plus the right column's own `self-start` keep that
+    // column sized to its content rather than stretched to the (taller) left
+    // column's height, which is what lets `sticky` actually have room to
+    // move as the page scrolls. Below 980px (branding.md's stack breakpoint)
+    // it collapses to one column with the map back in normal flow —
+    // LocationPicker itself drops the map back to a short height at that
+    // width via --pin-map-h.
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(360px,480px)] items-start gap-8 max-[980px]:grid-cols-1 max-[980px]:gap-4">
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
+          <div>
+            <label className={LABEL} htmlFor={`${idPrefix}-name`}>
+              Branch name
             </label>
-          ))}
+            <input
+              id={`${idPrefix}-name`}
+              name="name"
+              required
+              maxLength={MAX_BRANCH_NAME}
+              defaultValue={defaults?.name ?? ''}
+              placeholder="Smash Zone Marikina"
+              className={FIELD}
+            />
+          </div>
+          <div>
+            <label className={LABEL} htmlFor={`${idPrefix}-city`}>
+              City
+            </label>
+            <input
+              id={`${idPrefix}-city`}
+              name="city"
+              required
+              maxLength={MAX_CITY}
+              value={city}
+              onChange={(event) => setCity(event.target.value)}
+              placeholder="Marikina"
+              className={FIELD}
+            />
+          </div>
         </div>
-      </fieldset>
 
-      <LocationPicker
-        idPrefix={idPrefix}
-        address={address}
-        city={city}
-        lat={defaults?.lat ?? null}
-        lng={defaults?.lng ?? null}
-      />
+        <div>
+          <label className={LABEL} htmlFor={`${idPrefix}-address`}>
+            Street address
+          </label>
+          <input
+            id={`${idPrefix}-address`}
+            name="address"
+            required
+            maxLength={MAX_ADDRESS}
+            value={address}
+            onChange={(event) => setAddress(event.target.value)}
+            placeholder="12 Shoe Ave, Barangay Sto. Niño"
+            className={FIELD}
+          />
+        </div>
+
+        <div>
+          <label className={LABEL} htmlFor={`${idPrefix}-description`}>
+            Description
+          </label>
+          <textarea
+            id={`${idPrefix}-description`}
+            name="description"
+            rows={3}
+            maxLength={MAX_DESCRIPTION}
+            defaultValue={defaults?.description ?? ''}
+            placeholder="What players should know before they arrive."
+            className={TEXTAREA}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
+          <div>
+            <label className={LABEL} htmlFor={`${idPrefix}-phone`}>
+              Contact phone
+            </label>
+            <input
+              id={`${idPrefix}-phone`}
+              name="contactPhone"
+              maxLength={MAX_PHONE}
+              defaultValue={defaults?.contactPhone ?? ''}
+              placeholder="0917 000 0000"
+              className={FIELD}
+            />
+          </div>
+          <div>
+            <label className={LABEL} htmlFor={`${idPrefix}-email`}>
+              Contact email
+            </label>
+            <input
+              id={`${idPrefix}-email`}
+              name="contactEmail"
+              type="email"
+              maxLength={MAX_EMAIL}
+              defaultValue={defaults?.contactEmail ?? ''}
+              placeholder="desk@example.com"
+              className={FIELD}
+            />
+          </div>
+        </div>
+
+        <fieldset>
+          <legend className={LABEL}>Amenities</legend>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {AMENITY_SLUGS.map((amenity) => (
+              <label key={amenity} className={CHECK_LABEL} htmlFor={`${idPrefix}-${amenity}`}>
+                <input
+                  id={`${idPrefix}-${amenity}`}
+                  type="checkbox"
+                  name="amenities"
+                  value={amenity}
+                  defaultChecked={amenities.includes(amenity)}
+                  className={CHECKBOX}
+                />
+                {AMENITY_LABELS[amenity]}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </div>
+
+      <div className="sticky top-8 self-start max-[980px]:static">
+        <LocationPicker
+          idPrefix={idPrefix}
+          address={address}
+          city={city}
+          lat={defaults?.lat ?? null}
+          lng={defaults?.lng ?? null}
+        />
+      </div>
     </div>
   )
 }

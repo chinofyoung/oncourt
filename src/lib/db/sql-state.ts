@@ -20,6 +20,22 @@ export function sqlStateOf(error: unknown): string | undefined {
   return withCause?.cause?.code ?? withCause?.code
 }
 
+/**
+ * The constraint NAME behind a 23505/23P01/etc, wherever the driver left it —
+ * same `.cause` unwrap as sqlStateOf, for the same reason.
+ *
+ * A bare SQLSTATE check is not enough to safely translate "unique violation"
+ * into a business outcome: any future unique index on a table could raise the
+ * identical 23505, and a check that only looks at the code would silently
+ * swallow a genuinely different collision as if it were the one it was
+ * written for. Checking the constraint name too is what keeps that
+ * translation scoped to the index it was written for.
+ */
+export function constraintNameOf(error: unknown): string | undefined {
+  const withCause = error as { cause?: { constraint?: string }; constraint?: string }
+  return withCause?.cause?.constraint ?? withCause?.constraint
+}
+
 export const PG_UNIQUE_VIOLATION = '23505'
 export const PG_CHECK_VIOLATION = '23514'
 /**

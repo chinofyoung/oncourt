@@ -15,6 +15,26 @@ import {
   getOwnerOverview,
   getScheduleCourts,
 } from '@/lib/owner/queries'
+import type { OwnerEarningsRow } from '@/lib/owner/queries'
+
+/**
+ * The universal balance identity for the earnings table's four displayed
+ * columns: gross = platform fee + processor fee + net. This holds
+ * per-booking for all three bearers (platform/owner/player) now that the
+ * processor fee column reports what the owner actually paid — 0 when the
+ * platform bears the fee (it already came out of the platform's own
+ * retained margin, never out of gross or net), and the raw
+ * processor_fee_centavos otherwise. Since every term is a plain SQL sum with
+ * no per-bearer subtraction baked in, the identity survives aggregation
+ * across a row summing a MIXED set of bearers too — unlike the old
+ * platformRetainedCentavos-based check this replaces, which required every
+ * booking in `row` to share one bearer.
+ */
+function expectBalances(row: OwnerEarningsRow) {
+  expect(row.grossCentavos).toBe(
+    row.platformFeeCentavos + row.processorFeeCentavos + row.netCentavos,
+  )
+}
 
 afterAll(teardownFixtures)
 
@@ -200,8 +220,152 @@ test('getOwnerEarnings per-branch rows sum to the reported totals', async () => 
   expect(earnings.totals.netCentavos).toBe(
     earnings.rows.reduce((sum, r) => sum + r.netCentavos, 0),
   )
-  // gross = net + platform fee, per row, with no float drift.
-  expect(row!.grossCentavos).toBe(row!.netCentavos + row!.platformFeeCentavos)
+  expect(earnings.totals.processorFeeCentavos).toBe(
+    earnings.rows.reduce((sum, r) => sum + r.processorFeeCentavos, 0),
+  )
+  // Both seeded bookings above use seedBooking()'s default 'platform' bearer
+  // (and so its default processorFeeCentavos of 0), so this particular
+  // assertion reduces to the old gross = net + platformFee as a special case
+  // of the universal identity.
+  expectBalances(row!)
+})
+
+test("getOwnerEarnings balances gross/net/platform fee/processor fee for a non-platform bearer", async () => {
+  // The defect this follow-up fixes: gross === net + platformFee held only
+  // because processor_fee_centavos was always 0 in every seeded booking. A
+  // player-bears booking (the GCash example from the task: ₱1,000 court fee,
+  // ₱22.81 processor fee grossed onto the player) makes that false — gross
+  // includes the processor fee the player paid on top of the court fee, so
+  // the true identity needs the processor fee column too.
+  const mine = await seedBranchWithCourts(1)
+  const player = await seedPlayer()
+  const today = manilaToday()
+  const month = today.slice(0, 7)
+
+  await seedBooking({
+    courtId: mine.courtIds[0],
+    branchId: mine.branchId,
+    playerId: player,
+    startsAt: manilaAt(today, 19),
+    totalCentavos: 100000,
+    bearer: 'player',
+    processorFeeCentavos: 2281,
+  })
+
+  const earnings = await getOwnerEarnings([mine.branchId], month)
+  const row = earnings.rows.find((r) => r.branchId === mine.branchId)!
+  expect(row.processorFeeCentavos).toBe(2281)
+  // Gross includes the grossed-up processor fee: ₱1,022.81, not ₱1,000.
+  expect(row.grossCentavos).toBe(102281)
+  // The player bearer leaves owner_net untouched by the processor fee — only
+  // the platform fee comes out of it.
+  expect(row.netCentavos).toBe(100000 - 10000)
+  expectBalances(row)
+})
+
+test('getOwnerEarnings reports zero processor fee for the owner when the platform bears it, not the raw fee', async () => {
+  // The bug this follow-up exists to fix: for the 'platform' bearer (the
+  // schema default), the processor fee already came out of the platform's
+  // own retained margin (platformFee - processorFee) — it was never carved
+  // out of gross or out of the owner's net. Showing the raw
+  // processor_fee_centavos next to the raw platform_fee_centavos
+  // double-counts it, so gross stops equaling
+  // platformFee + processorFee + net. The fix is for this column to report
+  // what the OWNER actually paid: 0 for 'platform'. This assertion is
+  // expected to FAIL against the current, unfixed getOwnerEarnings, which
+  // still sums the raw column.
+  const mine = await seedBranchWithCourts(1)
+  const player = await seedPlayer()
+  const today = manilaToday()
+  const month = today.slice(0, 7)
+
+  await seedBooking({
+    courtId: mine.courtIds[0],
+    branchId: mine.branchId,
+    playerId: player,
+    startsAt: manilaAt(today, 8),
+    totalCentavos: 100000,
+    // bearer defaults to 'platform'.
+    processorFeeCentavos: 2281,
+  })
+
+  const earnings = await getOwnerEarnings([mine.branchId], month)
+  const row = earnings.rows.find((r) => r.branchId === mine.branchId)!
+  expect(row.grossCentavos).toBe(100000)
+  expect(row.platformFeeCentavos).toBe(10000)
+  expect(row.netCentavos).toBe(90000)
+  // The owner-actually-paid semantics: 0, not the raw 2281.
+  expect(row.processorFeeCentavos).toBe(0)
+  expectBalances(row)
+})
+
+test('getOwnerEarnings reports the raw processor fee when the owner bears it', async () => {
+  // The 'owner' bearer is a real cost the owner incurred, so — unlike
+  // 'platform' above — the raw column is exactly what should be displayed.
+  const mine = await seedBranchWithCourts(1)
+  const player = await seedPlayer()
+  const today = manilaToday()
+  const month = today.slice(0, 7)
+
+  await seedBooking({
+    courtId: mine.courtIds[0],
+    branchId: mine.branchId,
+    playerId: player,
+    startsAt: manilaAt(today, 9),
+    totalCentavos: 100000,
+    bearer: 'owner',
+    processorFeeCentavos: 2281,
+  })
+
+  const earnings = await getOwnerEarnings([mine.branchId], month)
+  const row = earnings.rows.find((r) => r.branchId === mine.branchId)!
+  expect(row.grossCentavos).toBe(100000)
+  expect(row.platformFeeCentavos).toBe(10000)
+  // The processor fee comes out of owner_net for this bearer.
+  expect(row.netCentavos).toBe(100000 - 10000 - 2281)
+  expect(row.processorFeeCentavos).toBe(2281)
+  expectBalances(row)
+})
+
+// The 'player' bearer's own exact-value + identity coverage already exists
+// above ("balances gross/net/platform fee/processor fee for a non-platform
+// bearer"), completing the one-test-per-bearer set without duplicating it.
+
+test('getOwnerEarnings balances the aggregate row across a mixed set of bearers in one branch/month', async () => {
+  // New coverage the old, single-bearer-only expectBalances() could not
+  // express: two bookings in the same branch/month with DIFFERENT bearers,
+  // summed into one row. Because the universal identity
+  // (gross = platformFee + processorFee + net) is a plain sum with no
+  // per-bearer subtraction, it must hold on the aggregate even though the
+  // rows behind it disagree on who bears the processor fee.
+  const mine = await seedBranchWithCourts(1)
+  const player = await seedPlayer()
+  const today = manilaToday()
+  const month = today.slice(0, 7)
+
+  await seedBooking({
+    courtId: mine.courtIds[0],
+    branchId: mine.branchId,
+    playerId: player,
+    startsAt: manilaAt(today, 10),
+    totalCentavos: 100000,
+    // bearer defaults to 'platform'.
+    processorFeeCentavos: 2281,
+  })
+  await seedBooking({
+    courtId: mine.courtIds[0],
+    branchId: mine.branchId,
+    playerId: player,
+    startsAt: manilaAt(today, 11),
+    totalCentavos: 50000,
+    bearer: 'owner',
+    processorFeeCentavos: 1500,
+  })
+
+  const earnings = await getOwnerEarnings([mine.branchId], month)
+  const row = earnings.rows.find((r) => r.branchId === mine.branchId)!
+  expect(row.bookingCount).toBe(2)
+  expectBalances(row)
 })
 
 test('getOwnerEarnings excludes expired and refunded bookings', async () => {

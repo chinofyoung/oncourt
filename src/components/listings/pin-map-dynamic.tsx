@@ -13,5 +13,5 @@ import dynamic from 'next/dynamic'
  */
 export const PinMap = dynamic(() => import('./pin-map').then((m) => m.PinMap), {
   ssr: false,
-  loading: () => <div className="h-[240px] w-full rounded-[10px] bg-[var(--band-off)]" />,
+  loading: () => <div className="h-[var(--pin-map-h,_240px)] w-full rounded-[10px] bg-[var(--band-off)]" />,
 })

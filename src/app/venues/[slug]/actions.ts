@@ -131,7 +131,9 @@ export async function createHoldAction(formData: FormData): Promise<{ error: str
     return { error: messageFor(result.reason) }
   }
 
-  // Payment is the next slice; for now land back on the branch page.
+  // The grid must show the slot as taken when the player comes back, so the
+  // branch page is revalidated even though we are navigating away from it.
   revalidatePath(`/venues/${slug}`)
-  redirect(`/venues/${slug}?held=${result.bookingId}`)
+  // The hold is live for 15 minutes; checkout is where it becomes a booking.
+  redirect(`/bookings/${result.bookingId}/checkout`)
 }

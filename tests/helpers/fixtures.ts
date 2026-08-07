@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
+import type { ProcessorFeeBearer } from '@/lib/payments/fees'
 
 // Tracks every auth.users id this test *file's* seedPlayer()/
 // seedBranchWithCourts() calls have created during the current run, so
@@ -148,6 +149,24 @@ export async function teardownFixtures(): Promise<void> {
        )
   `)
 
+  // Must precede the bookings delete for the same reason the reviews delete
+  // does: payments.booking_id is RESTRICT (a payment is a financial record),
+  // so a surviving payment blocks its booking's deletion with 23503 — which
+  // would abort teardown and leak every row this run created into the shared,
+  // persistent database. The predicate mirrors the bookings delete below
+  // exactly, so no payment can be missed by a row the next statement removes.
+  await db.execute(sql`
+    delete from payments
+    where booking_id in (
+      select id from bookings
+      where player_id = any (${sql.param(ids)}::uuid[])
+         or created_by = any (${sql.param(ids)}::uuid[])
+         or branch_id in (
+           select id from branches where owner_id = any (${sql.param(ids)}::uuid[])
+         )
+    )
+  `)
+
   // `created_by` is in this predicate for a hard reason, not for tidiness:
   // bookings.created_by carries no `on delete` clause, so it is RESTRICT. A
   // `blocked` row created by a tracked user has a NULL player_id and may sit
@@ -194,17 +213,71 @@ export async function seedBooking(opts: {
   playerId: string
   startsAt: Date
   hours?: number
-  status?: 'pending_payment' | 'confirmed' | 'completed'
+  status?: 'pending_payment' | 'confirmed' | 'completed' | 'expired' | 'refunded_manual'
   totalCentavos?: number
+  /**
+   * Explicit override for the hold clock. Payments tests need three shapes the
+   * default cannot express: a hold expiring in the future (the checkout happy
+   * path), a hold that already expired but has not been swept (the sweep race),
+   * and `null` for any non-hold status. Left undefined, the previous behavior
+   * is preserved exactly — now + 15 minutes for `pending_payment`, null
+   * otherwise — so every existing caller is unaffected.
+   */
+  expiresAt?: Date | null
+  /**
+   * Who bears the processor fee. Left undefined, defaults to 'platform' —
+   * the previous, only behavior this fixture produced. Added for the earnings
+   * follow-up (owner earnings table Processor fee column): every non-platform
+   * bearer needs a seeded booking whose money columns actually reflect that
+   * bearer, matching src/lib/payments/fees.ts's computeFees() shape, so
+   * queries reading those columns (getOwnerEarnings) have something real to
+   * sum.
+   */
+  bearer?: ProcessorFeeBearer
+  /**
+   * The processor's cut, in centavos. Left undefined, defaults to 0 — the
+   * previous, only value this fixture produced. Non-zero only makes sense
+   * paired with a non-'platform' bearer; passing it alongside the default
+   * 'platform' bearer is allowed (computeFees documents platform's own
+   * retained margin absorbing it) but does not change total_charged or
+   * owner_net, matching computeFees' 'platform' branch.
+   */
+  processorFeeCentavos?: number
 }): Promise<string> {
   const hours = opts.hours ?? 1
   const endsAt = new Date(opts.startsAt.getTime() + hours * 3_600_000)
   const status = opts.status ?? 'completed'
+  // The court fee. Named `total` (not `courtFee`) to preserve every existing
+  // caller's field name (`totalCentavos`) exactly — it only equals
+  // total_charged_centavos for the 'platform' and 'owner' bearers, matching
+  // computeFees(): only the 'player' bearer grosses total_charged up above it.
   const total = opts.totalCentavos ?? 30000
   const platformFee = Math.round(total * 0.1)
+  const bearer = opts.bearer ?? 'platform'
+  const processorFee = opts.processorFeeCentavos ?? 0
   // pending_payment is the only status the CHECK constraint
   // (bookings_hold_has_expiry) requires an expires_at for.
-  const expiresAt = status === 'pending_payment' ? new Date(Date.now() + 900_000) : null
+  const expiresAt =
+    opts.expiresAt !== undefined
+      ? opts.expiresAt
+      : status === 'pending_payment'
+        ? new Date(Date.now() + 900_000)
+        : null
+
+  // Mirrors src/lib/payments/fees.ts's computeFees() bearer branches exactly
+  // (with processorFee taken as a direct input rather than derived from a
+  // processor_rates row, since these fixtures seed a finished, already-priced
+  // booking, not a live checkout quote):
+  //   'player'   grosses total_charged up by the processor fee; owner_net is
+  //              untouched by it.
+  //   'owner'    total_charged stays at the court fee; the processor fee comes
+  //              out of owner_net.
+  //   'platform' (default) total_charged stays at the court fee; owner_net is
+  //              untouched — the processor fee comes out of the platform's own
+  //              retained margin, not out of anything stored on this row.
+  const transactionFee = bearer === 'player' ? processorFee : 0
+  const totalCharged = bearer === 'player' ? total + processorFee : total
+  const ownerNet = bearer === 'owner' ? total - platformFee - processorFee : total - platformFee
 
   const result = await db.execute(sql`
     insert into bookings (
@@ -216,8 +289,47 @@ export async function seedBooking(opts: {
       ${opts.courtId}::uuid, ${opts.branchId}::uuid, ${opts.playerId}::uuid,
       ${opts.startsAt.toISOString()}::timestamptz, ${endsAt.toISOString()}::timestamptz,
       ${status}::booking_status, ${expiresAt ? expiresAt.toISOString() : null}::timestamptz,
-      ${total}, 0, ${total}, ${platformFee}, 0, ${total - platformFee},
-      '{"test": true}'::jsonb
+      ${total}, ${transactionFee}, ${totalCharged}, ${platformFee}, ${processorFee}, ${ownerNet},
+      ${JSON.stringify({ mode: 'percentage', value: 1000, bearer, holdMinutes: 15 })}::jsonb
+    )
+    returning id
+  `)
+  return result.rows[0].id as string
+}
+
+/**
+ * A `payments` row, for tests that need a checkout session to already exist.
+ *
+ * No teardown tracking of its own: teardownFixtures() deletes payments by
+ * booking_id for every booking it is about to delete (added in this task, and
+ * REQUIRED — payments.booking_id is RESTRICT, so a surviving payment would
+ * abort the bookings delete with 23503 and leak the whole run's rows into this
+ * shared, persistent database).
+ *
+ * `sessionId` defaults to a fresh unique value rather than a fixed literal:
+ * the webhook resolves rows by provider_session_id, and two tests sharing a
+ * literal on a persistent database would resolve each other's rows.
+ */
+export async function seedPayment(opts: {
+  bookingId: string
+  sessionId?: string
+  paymentId?: string | null
+  paymentMethod?: string
+  amountCentavos: number
+  processorFeeCentavos?: number
+  status?: 'pending' | 'paid' | 'failed'
+}): Promise<string> {
+  const result = await db.execute(sql`
+    insert into payments (
+      booking_id, provider_session_id, provider_payment_id, payment_method,
+      amount_centavos, processor_fee_centavos, status
+    ) values (
+      ${opts.bookingId}::uuid,
+      ${opts.sessionId ?? 'cs_test_' + crypto.randomUUID()},
+      ${opts.paymentId ?? null},
+      ${opts.paymentMethod ?? 'gcash'},
+      ${opts.amountCentavos}, ${opts.processorFeeCentavos ?? 0},
+      ${opts.status ?? 'pending'}::payment_status
     )
     returning id
   `)

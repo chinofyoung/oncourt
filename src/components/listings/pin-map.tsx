@@ -111,7 +111,7 @@ export function PinMap({
         ref={containerRef}
         role="region"
         aria-label="Drag the marker to your venue's location"
-        className={`${MAP_SCOPE_CLASS} oncourt-pin-map h-[240px] w-full overflow-hidden rounded-[10px]`}
+        className={`${MAP_SCOPE_CLASS} oncourt-pin-map h-[var(--pin-map-h,_240px)] w-full overflow-hidden rounded-[10px]`}
       />
     </>
   )

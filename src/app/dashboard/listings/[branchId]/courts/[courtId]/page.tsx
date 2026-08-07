@@ -86,54 +86,76 @@ export default async function CourtDetailPage({
         )}
       </section>
 
-      <section aria-label="Court details" className={`${CARD} mb-6`}>
-        <h2 className="font-display mb-4 text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
-          Court details
-        </h2>
-        <CourtFieldsForm
-          courtId={court.id}
-          defaults={{ name: court.name, environment: court.environment, surface: court.surface }}
-        />
-      </section>
+      {/* Identity pair: name/surface/environment beside the gallery that
+          shows what the court looks like. Even fr/fr split per
+          branding.md's "plain card grids" default — neither side has a
+          natural minmax cap the way the branch form's map column does.
+          items-start so a short "Court details" card doesn't get stretched
+          to match a tall photo gallery. Collapses to one column at 980px in
+          plain document order (no CSS `order`): details, then photos. */}
+      <div className="mb-6 grid grid-cols-2 items-start gap-6 max-[980px]:grid-cols-1 max-[980px]:gap-4">
+        <section aria-label="Court details" className={CARD}>
+          <h2 className="font-display mb-4 text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
+            Court details
+          </h2>
+          <CourtFieldsForm
+            courtId={court.id}
+            defaults={{ name: court.name, environment: court.environment, surface: court.surface }}
+          />
+        </section>
 
-      <section aria-label="Court photos" className={`${CARD} mb-6`}>
-        <h2 className="font-display mb-1 text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
-          Court photos
-        </h2>
-        <p className="mb-4 text-[12.5px] text-[var(--ink-soft)]">
-          Photo changes do not send this court back for approval.
-        </p>
-        {/* canManage is unconditionally true here: reaching this page already
-            required manage_courts on this branch. */}
-        <PhotoManager kind="court" targetId={court.id} photos={court.photos} canManage />
-      </section>
-
-      <section aria-label="Opening hours" className={`${CARD} mb-6`}>
-        <h2 className="font-display mb-1 text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
-          Opening hours
-        </h2>
-        <p className="mb-4 text-[12.5px] text-[var(--ink-soft)]">
-          One window per day. Closing at {formatHour(24)} means midnight.
-        </p>
-        <OperatingHoursForm courtId={court.id} days={court.days} />
-      </section>
-
-      <section aria-label="Rates" className={CARD}>
-        <h2 className="font-display mb-1 text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
-          Rates
-        </h2>
-        {court.bands.length > 0 && (
-          <p className="font-mono mb-4 text-[11.5px] text-[var(--ink-soft)]">
-            {court.bands
-              .map(
-                (band) =>
-                  `${formatHourRange(band.startHour, band.endHour)} ${formatPeso(band.priceCentavos)}`,
-              )
-              .join('  ·  ')}
+        <section aria-label="Court photos" className={CARD}>
+          <h2 className="font-display mb-1 text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
+            Court photos
+          </h2>
+          <p className="mb-4 text-[12.5px] text-[var(--ink-soft)]">
+            Photo changes do not send this court back for approval.
           </p>
-        )}
-        <RateBandsForm courtId={court.id} bands={court.bands} />
-      </section>
+          {/* canManage is unconditionally true here: reaching this page already
+              required manage_courts on this branch. */}
+          <PhotoManager kind="court" targetId={court.id} photos={court.photos} canManage />
+        </section>
+      </div>
+
+      {/* Schedule pair: this is the pairing that actually earns the
+          two-column layout, not just space-filling. Rate bands are
+          validated as tiles covering exactly [min(opens), max(closes)]
+          across the open days (validateRateBands in
+          src/lib/listings/schedule.ts, surfaced above as the "rates don't
+          cover your hours" scheduleWarning). Stacked full-width, fixing a
+          coverage mismatch meant scrolling between two cards to compare
+          them; side by side, an owner can see the hours envelope and the
+          bands that are supposed to tile it at the same time. Same even
+          fr/fr split and 980px collapse as the pair above, in document
+          order: hours, then rates. */}
+      <div className="grid grid-cols-2 items-start gap-6 max-[980px]:grid-cols-1 max-[980px]:gap-4">
+        <section aria-label="Opening hours" className={CARD}>
+          <h2 className="font-display mb-1 text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
+            Opening hours
+          </h2>
+          <p className="mb-4 text-[12.5px] text-[var(--ink-soft)]">
+            One window per day. Closing at {formatHour(24)} means midnight.
+          </p>
+          <OperatingHoursForm courtId={court.id} days={court.days} />
+        </section>
+
+        <section aria-label="Rates" className={CARD}>
+          <h2 className="font-display mb-1 text-[17px] font-bold tracking-[-0.01em] text-[var(--ink)]">
+            Rates
+          </h2>
+          {court.bands.length > 0 && (
+            <p className="font-mono mb-4 text-[11.5px] text-[var(--ink-soft)]">
+              {court.bands
+                .map(
+                  (band) =>
+                    `${formatHourRange(band.startHour, band.endHour)} ${formatPeso(band.priceCentavos)}`,
+                )
+                .join('  ·  ')}
+            </p>
+          )}
+          <RateBandsForm courtId={court.id} bands={court.bands} />
+        </section>
+      </div>
     </>
   )
 }

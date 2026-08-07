@@ -33,6 +33,17 @@ export function formatPriceFrom(centavos: number): string {
 }
 
 /**
+ * `₱300/hr` for a single rate, `₱300 – ₱450/hr` for a range (spaced EN DASH,
+ * same convention as formatHourRange). Both arguments equal collapses to the
+ * single-rate form rather than printing a zero-width range.
+ */
+export function formatPriceRange(minCentavos: number, maxCentavos: number): string {
+  return minCentavos === maxCentavos
+    ? `${formatPeso(minCentavos)}/hr`
+    : `${formatPeso(minCentavos)} ${EN_DASH} ${formatPeso(maxCentavos)}/hr`
+}
+
+/**
  * 24h integer hour to a 12h label. Accepts 24, which
  * `court_operating_hours.closes_hour` permits and the fixtures use — it is
  * midnight, and rendering it as `24 AM` was a real bug.

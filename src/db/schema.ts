@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm"
 export const bookingStatus = pgEnum("booking_status", ['pending_payment', 'confirmed', 'completed', 'expired', 'refunded_manual', 'blocked'])
 export const courtEnvironment = pgEnum("court_environment", ['indoor', 'outdoor'])
 export const courtStatus = pgEnum("court_status", ['pending', 'approved', 'rejected', 'suspended'])
+export const paymentStatus = pgEnum("payment_status", ['pending', 'paid', 'failed'])
 export const payoutStatus = pgEnum("payout_status", ['pending', 'paid'])
 export const platformFeeMode = pgEnum("platform_fee_mode", ['percentage', 'flat'])
 export const processorFeeBearer = pgEnum("processor_fee_bearer", ['player', 'owner', 'platform'])
@@ -171,6 +172,40 @@ export const branchStaff = pgTable("branch_staff", {
 	check("branch_staff_some_permission", sql`view_bookings OR block_slots OR manage_courts OR view_earnings`),
 ]);
 
+export const payments = pgTable("payments", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	bookingId: uuid("booking_id").notNull(),
+	provider: text().default('paymongo').notNull(),
+	providerSessionId: text("provider_session_id"),
+	providerPaymentId: text("provider_payment_id"),
+	paymentMethod: text("payment_method"),
+	amountCentavos: integer("amount_centavos").notNull(),
+	processorFeeCentavos: integer("processor_fee_centavos").default(0).notNull(),
+	status: paymentStatus().default('pending').notNull(),
+	needsRefund: boolean("needs_refund").default(false).notNull(),
+	rawEvent: jsonb("raw_event"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	paidAt: timestamp("paid_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("payments_booking_id_idx").using("btree", table.bookingId.asc().nullsLast().op("uuid_ops")),
+	index("payments_needs_refund_idx").using("btree", table.needsRefund.asc().nullsLast().op("bool_ops")).where(sql`needs_refund`),
+	index("payments_payment_method_idx").using("btree", table.paymentMethod.asc().nullsLast().op("text_ops")),
+	index("payments_provider_session_id_idx").using("btree", table.providerSessionId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.bookingId],
+			foreignColumns: [bookings.id],
+			name: "payments_booking_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.paymentMethod],
+			foreignColumns: [processorRates.paymentMethod],
+			name: "payments_payment_method_fkey"
+		}),
+	unique("payments_provider_payment_id_key").on(table.providerPaymentId),
+	check("payments_amount_centavos_check", sql`amount_centavos >= 0`),
+	check("payments_processor_fee_centavos_check", sql`processor_fee_centavos >= 0`),
+]);
+
 export const bookings = pgTable("bookings", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	courtId: uuid("court_id").notNull(),
@@ -245,16 +280,6 @@ export const platformSettings = pgTable("platform_settings", {
 	check("platform_settings_singleton", sql`CHECK (id)`),
 ]);
 
-export const processorRates = pgTable("processor_rates", {
-	paymentMethod: text("payment_method").primaryKey().notNull(),
-	percentageBps: integer("percentage_bps").notNull(),
-	fixedFeeCentavos: integer("fixed_fee_centavos").default(0).notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	check("processor_rates_fixed_fee_centavos_check", sql`fixed_fee_centavos >= 0`),
-	check("processor_rates_percentage_bps_check", sql`percentage_bps >= 0`),
-]);
-
 export const reviews = pgTable("reviews", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	bookingId: uuid("booking_id").notNull(),
@@ -283,4 +308,14 @@ export const reviews = pgTable("reviews", {
 		}).onDelete("cascade"),
 	unique("reviews_booking_id_key").on(table.bookingId),
 	check("reviews_rating_check", sql`(rating >= 1) AND (rating <= 5)`),
+]);
+
+export const processorRates = pgTable("processor_rates", {
+	paymentMethod: text("payment_method").primaryKey().notNull(),
+	percentageBps: integer("percentage_bps").notNull(),
+	fixedFeeCentavos: integer("fixed_fee_centavos").default(0).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	check("processor_rates_fixed_fee_centavos_check", sql`fixed_fee_centavos >= 0`),
+	check("processor_rates_percentage_bps_check", sql`percentage_bps >= 0`),
 ]);

@@ -49,8 +49,22 @@ export type AdminCourtRow = {
   branchSlug: string
   ownerBusinessName: string | null
   ownerEmail: string
-  photoCount: number
-  bandCount: number
+  /**
+   * `court_photos.storage_path` for the lowest `sort_order` row, tie-broken by
+   * id so the cover never shuffles between renders if two photos share a
+   * sort_order. Null means the court has none yet — a pending court
+   * legitimately has no photos, and the card falls back to a placeholder
+   * rather than treating this as an error.
+   */
+  coverPhotoPath: string | null
+  /**
+   * Min/max of `court_rate_bands.price_centavos`, both null together when the
+   * court has no bands yet (the `bands_do_not_tile`/`no_open_day` schedule
+   * warnings already cover that case). Derived from `bandsByCourt` below
+   * rather than a third query — the bands are already in hand.
+   */
+  minPriceCentavos: number | null
+  maxPriceCentavos: number | null
   hoursSummary: string
   /**
    * Non-null means approveCourt() will refuse this court — the identical rule,
@@ -96,9 +110,9 @@ export async function getAdminCourts(statuses: CourtStatus[]): Promise<AdminCour
   // an empty id list for no reason.
   if (statuses.length === 0) return []
 
-  // Counts as correlated scalar subqueries rather than joins with a GROUP BY:
-  // each is an index lookup on court_photos_court_id_idx /
-  // court_rate_bands_court_id_idx over one court's rows, and the shape stays
+  // Cover photo as a correlated scalar subquery rather than a join: it is an
+  // index lookup on court_photos_court_id_idx over one court's (usually
+  // handful of) rows, ordered and limited to the winner, and the shape stays
   // readable. The queue is tens of rows, not thousands — an approval backlog
   // that large is a staffing problem, not a query-planning one.
   const courtsResult = await db.execute(sql`
@@ -107,8 +121,8 @@ export async function getAdminCourts(statuses: CourtStatus[]): Promise<AdminCour
            to_char(c.created_at at time zone 'Asia/Manila', 'YYYY-MM-DD') as added_on,
            b.id as branch_id, b.name as branch_name, b.city as branch_city, b.slug as branch_slug,
            p.business_name as owner_business_name, p.email as owner_email,
-           (select count(*)::int from court_photos ph where ph.court_id = c.id) as photo_count,
-           (select count(*)::int from court_rate_bands rb where rb.court_id = c.id) as band_count
+           (select ph.storage_path from court_photos ph where ph.court_id = c.id
+              order by ph.sort_order, ph.id limit 1) as cover_photo_path
     from courts c
     join branches b on b.id = c.branch_id
     join profiles p on p.id = b.owner_id
@@ -162,6 +176,13 @@ export async function getAdminCourts(statuses: CourtStatus[]): Promise<AdminCour
     const courtId = row.id as string
     const days = daysByCourt.get(courtId) ?? []
     const bands = bandsByCourt.get(courtId) ?? []
+    // Both null together: a court with no rate bands yet has no price to
+    // show, not a zero one — Math.min/max of an empty array is
+    // Infinity/-Infinity, which is why this branches on bands.length rather
+    // than feeding the empty array through.
+    const prices = bands.map((band) => band.priceCentavos)
+    const minPriceCentavos = prices.length > 0 ? Math.min(...prices) : null
+    const maxPriceCentavos = prices.length > 0 ? Math.max(...prices) : null
     return {
       id: courtId,
       name: row.name as string,
@@ -176,8 +197,9 @@ export async function getAdminCourts(statuses: CourtStatus[]): Promise<AdminCour
       branchSlug: row.branch_slug as string,
       ownerBusinessName: (row.owner_business_name as string | null) ?? null,
       ownerEmail: row.owner_email as string,
-      photoCount: Number(row.photo_count),
-      bandCount: Number(row.band_count),
+      coverPhotoPath: (row.cover_photo_path as string | null) ?? null,
+      minPriceCentavos,
+      maxPriceCentavos,
       hoursSummary: summarizeHours(days),
       scheduleWarning: courtScheduleWarning(days, bands),
     }
