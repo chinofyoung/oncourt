@@ -144,7 +144,11 @@ test('cityCenterByName finds a known city and otherwise falls back to the defaul
   // The pin editor has to start somewhere when a branch has no pin yet.
   expect(cityCenterByName('Tacloban City')).toMatchObject({ slug: 'tacloban' })
   expect(cityCenterByName('  tacloban city ')).toMatchObject({ slug: 'tacloban' })
-  expect(cityCenterByName('Cebu City')).toMatchObject({ slug: 'tacloban' })
+  // Cebu resolves to its own centroid now that the table carries it — the pin
+  // editor opening on the city the owner actually typed is the whole point of
+  // this function. Before the table grew to 15 cities this fell back to
+  // tacloban simply because there was no Cebu entry to find.
+  expect(cityCenterByName('Cebu City')).toMatchObject({ slug: 'cebu-city' })
   expect(cityCenterByName(null)).toMatchObject({ slug: 'tacloban' })
   // A wide-area entry is not a city anyone types into an address form, and
   // its centroid is open water in the Sibuyan Sea — a useless place to drop a

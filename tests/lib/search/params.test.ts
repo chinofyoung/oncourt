@@ -87,9 +87,13 @@ describe('parseSearchParams', () => {
     })
 
     it('falls back to tacloban for a slug that is no longer in the table', () => {
-      // `makati` and friends were real slugs before the Metro Manila table was
-      // replaced; an old bookmark must land on the default, not 500 or (0, 0).
-      const result = parseSearchParams({ city: 'makati' })
+      // An old bookmark carrying a slug this table no longer has must land on
+      // the default, not 500 or (0, 0). `makati` used to be the example here —
+      // it was a dead slug after the Metro Manila table was replaced, and
+      // became a real one again when the table grew to 15 cities for the
+      // player home-city field. `intramuros` is a district, never a slug in
+      // this table, so it cannot come back the same way.
+      const result = parseSearchParams({ city: 'intramuros' })
       expect(result.citySlug).toBe('tacloban')
       expect(result.filters.radiusMeters).toBe(CITY_SEARCH_RADIUS_METERS)
     })

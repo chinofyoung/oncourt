@@ -25,6 +25,7 @@ export const profiles = pgTable("profiles", {
 	platformFeeValue: integer("platform_fee_value"),
 	processorFeeBearer: processorFeeBearer("processor_fee_bearer"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	citySlug: text("city_slug"),
 }, (table) => [
 	foreignKey({
 			columns: [table.id],

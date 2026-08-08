@@ -2,10 +2,12 @@ import Link from 'next/link'
 import { Nav } from '@/components/site/nav'
 import { Footer } from '@/components/site/footer'
 import { StatCard } from '@/components/dashboard/stat-card'
+import { ProfileCompletionPanel } from '@/components/player/profile-completion-panel'
 import { requirePlayerPage } from '@/lib/auth/page-guards'
 import { getPlayerDashboard } from '@/lib/bookings/queries'
 import { formatDateLabel, formatHourRange, formatPeso } from '@/lib/format'
 import { photoUrl } from '@/lib/photos'
+import { getPlayerProfileFields } from '@/lib/profile/queries'
 import { ReviewForm } from './review-form'
 
 const TABS = ['upcoming', 'past', 'reviews'] as const
@@ -44,6 +46,7 @@ export default async function BookingsPage({
   const tab: Tab = TABS.includes(rawTab as Tab) ? (rawTab as Tab) : 'upcoming'
 
   const { stats, upcoming, past, reviews } = await getPlayerDashboard(user.id)
+  const profile = await getPlayerProfileFields(user.id)
 
   return (
     <>
@@ -63,6 +66,12 @@ export default async function BookingsPage({
             Your court time, receipts, and reviews in one place.
           </p>
         </header>
+
+        <ProfileCompletionPanel
+          fullName={profile.fullName}
+          phone={profile.phone}
+          citySlug={profile.citySlug}
+        />
 
         <div className="mb-8 grid grid-cols-4 gap-4 max-[980px]:grid-cols-2">
           <StatCard kicker="Upcoming" value={String(stats.upcomingCount)} />

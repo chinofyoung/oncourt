@@ -1,0 +1,16 @@
+-- A player's home city, as a slug from src/lib/geo/cities.ts.
+--
+-- Nullable with no default on purpose: "we have not asked yet" and "they
+-- declined to say" are both honestly null, and every existing profile must
+-- stay valid without a backfill.
+--
+-- No foreign key and no check constraint. CITIES is a hardcoded TypeScript
+-- table, not a database table -- src/lib/geo/cities.ts documents why (no API
+-- key, no rate limit, no network failure mode, no option that returns
+-- nothing). There is nothing here to reference. The slug is validated in
+-- TypeScript on write, the same way parseSearchParams validates amenity slugs
+-- against AMENITY_SLUGS.
+--
+-- `if not exists` so this migration is idempotent: this project cannot run
+-- `supabase db reset`, so idempotency is proven by applying twice.
+alter table profiles add column if not exists city_slug text;
