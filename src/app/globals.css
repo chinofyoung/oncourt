@@ -21,6 +21,22 @@
   --ball-ink: #232d00;
   --booked: #e7ece2;
   --band-off: #eaf2e4;
+  /* Availability-grid slot states (src/components/availability-grid.tsx).
+     Deliberately separate from --booked above: --booked is a general
+     neutral disabled/tag tint used in three unrelated dashboard spots (the
+     bookings list's "not yours to see" tag, a branch-fieldset button hover,
+     and a listings-page schedule note) that must stay neutral, not turn
+     orange. --slot-off doubles for both 'past' and 'closed' cells — they
+     read as the same "can't book this" grey, distinguished only by the
+     dashed border 'past' keeps. Ink values are darker than --ink-soft on
+     purpose: --ink-soft on --slot-off computes to ~4.2:1, under the 4.5:1
+     AA floor the grid's 10px labels need; --slot-booked-ink on
+     --slot-booked measures ~5.47:1 and --slot-off-ink on --slot-off
+     measures ~5.41:1 (both computed, not eyeballed). */
+  --slot-booked: #f7e3d0;
+  --slot-booked-ink: #8a4a1e;
+  --slot-off: #dde4da;
+  --slot-off-ink: #4c5d51;
   --btn-radius: 12px;
   --btn-h: 48px;
   --btn-h-sm: 38px;
@@ -104,4 +120,39 @@ body {
     ):not(:disabled) {
     cursor: pointer;
   }
+}
+
+/* Search-bar <select> chevron — branding.md, Controls.
+   Both search bars (src/app/page.tsx's hero, src/components/search/map-hero.tsx's
+   float) previously rendered the browser's native select arrow: a different glyph
+   at a different size and offset per field and per browser, reading as grey system
+   chrome inside a hand-built control. These two utilities replace it with one
+   10x10 chevron at one stroke weight, in the two skins the bars come in.
+
+   Each utility bundles appearance:none WITH the glyph and the padding that clears
+   it, deliberately: split across three classes, a call site that forgets
+   appearance-none renders two arrows, and one that forgets the padding renders the
+   value text underneath the chevron. One class, or nothing.
+
+   Both stroke colours below are literal hex, not CSS custom properties — a data
+   URI cannot read a var(). `#5B6E60` (select-chevron-dark) IS `--ink-soft`; if
+   that token ever changes, this string must change with it. `#FFFFFF` at .55
+   opacity (select-chevron-light) is the glass skin's counterpart: it matches the
+   white/55 field labels the chevron sits beside there. */
+@utility select-chevron-dark {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%235B6E60' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 3.5 5 7l3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right center;
+  background-size: 10px 10px;
+  padding-right: 16px;
+}
+
+@utility select-chevron-light {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' opacity='.55' stroke='%23FFFFFF' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 3.5 5 7l3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right center;
+  background-size: 10px 10px;
+  padding-right: 16px;
 }

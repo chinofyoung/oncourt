@@ -1,14 +1,16 @@
 'use client'
 
 import { useState } from 'react'
-import { spinePriceCentavos } from '@/lib/booking/spine-price'
 import type { GridCell, GridColumn } from '@/lib/booking/availability'
 import { createHoldAction } from '@/app/venues/[slug]/actions'
 
 // Colors and control tokens reference the brand CSS variables defined in
 // src/app/globals.css (which mirror design/branding.md — the design source
 // of truth): --panel/--hairline/--ink/--ink-soft for the card and table
-// chrome, --booked for disabled slots, --ball/--ball-ink/--ink for the
+// chrome, --band-off for the open/available fill, --slot-booked/
+// --slot-booked-ink for booked, --slot-off/--slot-off-ink for past and
+// closed (--booked itself stays a neutral tint used elsewhere in the app,
+// not in this grid — see design/branding.md's Color table), --ball/--ball-ink/--ink for the
 // selected-cell treatment ("lime with 1.5px ink border and court-corner tick
 // marks", per branding.md's Availability grid component entry), --court for
 // the light-background focus ring (branding.md's Focus rule — --ball is the
@@ -37,19 +39,21 @@ import { createHoldAction } from '@/app/venues/[slug]/actions'
 // empty-state already uses) and a "Past" label, so it also never reads as
 // 'booked' (which means someone else holds the slot, not that time ran out).
 //
-// Price placement: a row whose `open` cells all quote the same price shows
-// that price ONCE in the time spine (see spinePriceCentavos in
-// src/lib/booking/spine-price.ts — it lives in its own import-free module
-// because this is a client component and availability.ts imports server-only
-// `@/db`, so value-importing from there 500s the page) and renders those
-// cells blank; a row whose open cells disagree keeps a price in each cell, as
-// before. Both kinds of row can appear in one grid — the decision is per row,
-// never per grid. This is
-// NOT a return of the per-row rate-band tinting described as dropped above:
-// that asserted a shared band structure the data model does not guarantee,
-// whereas this only renders a shared value after verifying the visible open
-// cells actually agree. The button's aria-label always speaks the full price,
-// blank cell or not.
+// Price placement: every `open` cell always prints its own price, and the
+// time spine never carries a price at all. An earlier version hoisted a
+// row's price into the spine (and printed "Available" in the cells) when
+// every open cell in that row happened to quote the same amount — reverted
+// by explicit user instruction, because rate bands are defined per COURT,
+// not per branch: two courts in one row can legitimately disagree on price
+// for the same hour, so a value that looked shared for one row could go
+// stale the moment a court's bands changed, and even a genuinely-agreeing
+// row was misleading the instant a viewer assumed the spine price was a
+// property of the *hour* rather than a coincidence across the courts
+// visible that day. This is the same reasoning that already killed the
+// shared `--band-peak` spine tint above — the spine has now twice been the
+// wrong place to put per-court information — so don't reintroduce a hoisted
+// price as an "optimization"; per-cell pricing is correct, not merely
+// simpler. The button's aria-label always speaks the full price.
 //
 // `canBook` (required, resolved by the venue page from `getOptionalUser()`)
 // is false for a signed-in owner or admin session — roles are exclusive as
@@ -177,19 +181,13 @@ export function AvailabilityGrid(props: {
               const rowCells: GridCell[] = props.grid.map(
                 (court) => court.cells.find((c) => c.hour === hour)!,
               )
-              const spinePrice = spinePriceCentavos(rowCells)
               return (
                 <tr key={hour} className="border-b border-[var(--hairline)]">
                   <th
                     scope="row"
                     className="sticky left-0 z-[1] w-px whitespace-nowrap border-r border-[var(--hairline)] bg-[var(--panel)] px-3 py-0.5 text-left font-mono text-xs font-normal text-[var(--ink)]"
                   >
-                    <span className="flex items-baseline gap-3">
-                      <span>{formatHour(hour)}</span>
-                      {spinePrice !== null && (
-                        <span className="ml-auto text-[var(--ink-soft)]">{formatPeso(spinePrice)}</span>
-                      )}
-                    </span>
+                    {formatHour(hour)}
                   </th>
                   {props.grid.map((court, courtIndex) => {
                     const cell = rowCells[courtIndex]
@@ -240,29 +238,30 @@ export function AvailabilityGrid(props: {
                           'relative h-[var(--slot-h)] w-full rounded-[var(--btn-radius)] border font-mono text-[10px] font-medium transition-colors',
                             'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--court)] focus-visible:outline-offset-[3px]',
                             cell.state === 'booked'
-                              ? 'cursor-default border-transparent bg-[var(--booked)] text-[var(--ink-soft)]'
+                              ? 'cursor-default border-transparent bg-[var(--slot-booked)] text-[var(--slot-booked-ink)]'
                               : cell.state === 'past'
-                                ? // Distinct from 'closed' (no border, opacity-50, "—") and
-                                  // from 'booked' (solid fill, "Booked"): a dashed border is
-                                  // the same "info not available" vocabulary the location
-                                  // card's empty state already uses elsewhere on this page.
-                                  'cursor-not-allowed border-dashed border-[var(--hairline)] bg-transparent text-[var(--ink-soft)] opacity-70'
+                                ? // Distinct from 'closed' (borderless, "Closed") and from
+                                  // 'booked' (soft orange, "Booked"): a dashed border is the
+                                  // same "info not available" vocabulary the location card's
+                                  // empty state already uses elsewhere on this page. Shares
+                                  // --slot-off/--slot-off-ink with 'closed' below — both mean
+                                  // "you can't book this", just for different reasons (clock
+                                  // vs. schedule) — the dashed border is what tells them apart.
+                                  'cursor-not-allowed border-dashed border-[var(--hairline)] bg-[var(--slot-off)] text-[var(--slot-off-ink)]'
                                 : cell.state === 'closed'
-                                  ? 'cursor-not-allowed border-transparent bg-transparent text-[var(--ink-soft)] opacity-50'
+                                  ? 'cursor-not-allowed border-transparent bg-[var(--slot-off)] text-[var(--slot-off-ink)]'
                                   : selected
                                     ? 'border-[1.5px] border-[var(--ink)] bg-[var(--ball)] font-semibold text-[var(--ball-ink)] before:absolute before:left-[3px] before:top-[3px] before:h-[7px] before:w-[7px] before:border-l-2 before:border-t-2 before:border-[var(--ball-ink)] before:content-[""] after:absolute after:bottom-[3px] after:right-[3px] after:h-[7px] after:w-[7px] after:border-b-2 after:border-r-2 after:border-[var(--ball-ink)] after:content-[""]'
-                                    : 'border-[var(--hairline)] bg-[var(--surface)] text-[var(--court-deep)] hover:border-[var(--court)]',
+                                    : 'border-[var(--hairline)] bg-[var(--band-off)] text-[var(--court-deep)] hover:border-[var(--court)]',
                           ].join(' ')}
                         >
                           {cell.state === 'open'
-                            ? spinePrice !== null
-                              ? null
-                              : formatPeso(cell.priceCentavos)
+                            ? formatPeso(cell.priceCentavos)
                             : cell.state === 'booked'
                               ? 'Booked'
                               : cell.state === 'past'
                                 ? 'Past'
-                                : '—'}
+                                : 'Closed'}
                         </button>
                       </td>
                     )
@@ -274,16 +273,19 @@ export function AvailabilityGrid(props: {
         </table>
       </div>
 
-      {/* A row whose price sits in the time spine renders its open cells blank, so
-          fill and border are what distinguish the four states. This legend is what
-          makes that legible; the swatches repeat each state's own treatment. */}
+      {/* Every state carries its own fill, border AND label (an `open` cell's
+          label is its own price, never blank and never the word "Available"),
+          so this legend is not decoding blank cells — it is a pure colour key.
+          It stays anyway because a swatch is quicker to scan than five words
+          across a wide grid; the swatches repeat each state's own fill and
+          border. */}
       <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[var(--hairline)] px-4 py-2 font-mono text-[10px] uppercase tracking-[.08em] text-[var(--ink-soft)]">
         {[
-          { label: 'Available', className: 'border-[var(--hairline)] bg-[var(--surface)]' },
+          { label: 'Available', className: 'border-[var(--hairline)] bg-[var(--band-off)]' },
           { label: 'Selected', className: 'border-[1.5px] border-[var(--ink)] bg-[var(--ball)]' },
-          { label: 'Booked', className: 'border-transparent bg-[var(--booked)]' },
-          { label: 'Past', className: 'border-dashed border-[var(--hairline)] bg-transparent' },
-          { label: 'Closed', className: 'border-transparent bg-transparent opacity-50' },
+          { label: 'Booked', className: 'border-transparent bg-[var(--slot-booked)]' },
+          { label: 'Past', className: 'border-dashed border-[var(--hairline)] bg-[var(--slot-off)]' },
+          { label: 'Closed', className: 'border-transparent bg-[var(--slot-off)]' },
         ].map((item) => (
           <li key={item.label} className="flex items-center gap-1.5">
             <span aria-hidden className={`h-3 w-5 rounded-[4px] border ${item.className}`} />

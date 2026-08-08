@@ -2,7 +2,6 @@ import { sql } from 'drizzle-orm'
 import { expect, test } from 'vitest'
 import { db } from '@/db'
 import { buildAvailabilityGrid, loadBranchDay } from '@/lib/booking/availability'
-import { spinePriceCentavos } from '@/lib/booking/spine-price'
 import { manilaHourOf, manilaToday, shiftDay } from '@/lib/date-manila'
 import { manilaHour, seedBlock, seedBranchWithCourts } from '../helpers/fixtures'
 
@@ -317,73 +316,4 @@ test('loadBranchDay for today marks hours before the current Manila hour as past
       expect(cell.state).not.toBe('past')
     }
   }
-})
-
-// spinePriceCentavos: whether a single price describes every bookable
-// (`open`) cell in one grid row, so the availability grid can show it once
-// in the time spine instead of repeating it per cell.
-
-test('spinePriceCentavos returns the shared price when every open cell agrees', () => {
-  const grid = buildAvailabilityGrid(INPUT)
-  // Hour 14: c1 open at 26500, c2 open at 26500.
-  const row = grid.map((col) => col.cells.find((c) => c.hour === 14)!)
-  expect(spinePriceCentavos(row)).toBe(26500)
-})
-
-test('spinePriceCentavos returns null when open cells disagree', () => {
-  const grid = buildAvailabilityGrid(INPUT)
-  // Hour 15: c1 crosses into its 36500 band, c2 is still 26500.
-  const row = grid.map((col) => col.cells.find((c) => c.hour === 15)!)
-  expect(spinePriceCentavos(row)).toBeNull()
-})
-
-test('spinePriceCentavos ignores closed cells and their placeholder zero price', () => {
-  // INPUT's own rate bands (c1: 11-15 then 15-24; c2: 11-24) happen to cover
-  // its entire union range (11-23) for BOTH courts, so every closed cell
-  // there is closed purely because it falls outside that court's operating
-  // window while still matching a rate band -- meaning it already carries a
-  // real, non-zero price (e.g. c2's hour 11 is closed but still prices at
-  // 26500 from its band). `band?.priceCentavos ?? 0` only falls back to the
-  // placeholder 0 when NO band matches the hour at all, which cannot happen
-  // anywhere in INPUT's union. This is a corrected assumption from the plan,
-  // which stated hour 11 gives c2 a placeholder-zero price; it does not.
-  // Custom fixture instead: c3 has no rate-band entry whatsoever, so its
-  // closed cells carry the literal placeholder 0, alongside c1 (from INPUT)
-  // open and priced normally at the same hour.
-  const grid = buildAvailabilityGrid({
-    date: '2026-08-15',
-    courts: [INPUT.courts[0], { courtId: 'c3', courtName: 'Court 3', environment: 'indoor' as const }],
-    rateBands: { c1: INPUT.rateBands.c1 }, // no entry for c3 at all
-    operatingHours: { c1: INPUT.operatingHours.c1, c3: { opensHour: 11, closesHour: 24 } },
-    occupiedHours: {},
-    elapsedThroughHour: 0,
-  })
-  const row = grid.map((col) => col.cells.find((c) => c.hour === 11)!)
-  expect(row.find((c) => c.state === 'closed')!.priceCentavos).toBe(0)
-  expect(spinePriceCentavos(row)).toBe(26500)
-})
-
-test('spinePriceCentavos ignores booked cells even when their price differs', () => {
-  // c1 hours 18-19 are occupied. Give c2 a different price so that counting
-  // the booked cell would change the answer, and confirm it does not.
-  const grid = buildAvailabilityGrid({
-    ...INPUT,
-    rateBands: {
-      c1: [{ startHour: 11, endHour: 24, priceCentavos: 99900 }],
-      c2: [{ startHour: 11, endHour: 24, priceCentavos: 26500 }],
-    },
-  })
-  const row = grid.map((col) => col.cells.find((c) => c.hour === 18)!)
-  expect(row.find((c) => c.state === 'booked')).toBeDefined()
-  expect(spinePriceCentavos(row)).toBe(26500)
-})
-
-test('spinePriceCentavos returns null when a row has no open cells', () => {
-  expect(spinePriceCentavos([])).toBeNull()
-  expect(
-    spinePriceCentavos([
-      { hour: 9, priceCentavos: 0, state: 'closed' },
-      { hour: 9, priceCentavos: 26500, state: 'past' },
-    ]),
-  ).toBeNull()
 })

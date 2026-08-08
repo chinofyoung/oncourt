@@ -3,13 +3,12 @@ import { Wordmark } from '@/components/site/wordmark'
 import { AccountMenu } from '@/components/site/account-menu'
 import { getOptionalUser } from '@/lib/auth/guards'
 import { hasAnyStaffGrant } from '@/lib/staff/access'
-import { ownerCtaHref } from '@/lib/site/owner-cta'
 
 /**
  * design/branding.md, Nav: floating over heroes (absolute, transparent,
  * white text + glass pill) or solid --surface with a hairline border on
- * utility pages. Right side: "List your court" pill + 36px avatar.
- * The pill's destination depends on the session — see src/lib/site/owner-cta.ts.
+ * utility pages. Right side: the account menu (36px avatar) when signed in,
+ * or a "Sign in" link when signed out.
  *
  * Glass surfaces are for use over photos ONLY:
  * rgba(255,255,255,.09) bg + rgba(255,255,255,.18) 1px border + blur(22px).
@@ -57,16 +56,6 @@ export async function Nav({ variant = 'solid' }: { variant?: 'overlay' | 'solid'
         </div>
 
         <div className="flex items-center gap-3">
-          <Link
-            href={ownerCtaHref(user?.role ?? null)}
-            className={
-              onDark
-                ? 'inline-flex h-[var(--btn-h-sm)] items-center rounded-[var(--btn-radius)] border border-white/[.18] bg-white/[.09] px-4 text-sm font-semibold text-white backdrop-blur-[22px]'
-                : 'inline-flex h-[var(--btn-h-sm)] items-center rounded-[var(--btn-radius)] border border-[var(--hairline)] px-4 text-sm font-semibold text-[var(--ink)]'
-            }
-          >
-            List your court
-          </Link>
           {user ? (
             <AccountMenu
               user={{

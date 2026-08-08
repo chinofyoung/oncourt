@@ -24,8 +24,8 @@ import { ownerCtaHref } from '@/lib/site/owner-cta'
 // home.html uses TWO lime buttons on one page — the hero's `.search-btn`
 // AND the owner-cta's `.cta-btn` both use `--ball`/`--ball-ink`. That
 // directly violates branding.md's Controls rule, "Never two lime buttons in
-// one view." The hero's "Search" is this page's one primary action, so the
-// owner CTA below renders as a light button (--surface bg, --ink text)
+// one view." The hero's lime search CTA is this page's one primary action,
+// so the owner CTA below renders as a light button (--surface bg, --ink text)
 // instead of lime — still a clear, high-contrast CTA against the dark
 // --court-deep panel, just not competing with the hero's lime.
 export default async function HomePage() {
@@ -66,7 +66,18 @@ export default async function HomePage() {
           />
           <div aria-hidden className="absolute inset-0 bg-[rgba(6,20,13,.68)]" />
 
-          <div className="relative z-[1] mx-auto max-w-[1120px] px-6">
+          {/* The full-bleed padding formula, NOT `mx-auto max-w-[1120px]
+              px-6` — the two are not the same column. `max-w` + `px-6`
+              leaves 1072px of content inset 24px from where every other
+              band on this page starts; the formula leaves exactly 1120px
+              flush with them. Before this changed, the nav, `main` and the
+              footer all began at x=95 on a 1309px viewport while this hero
+              began at x=119, so the headline and search bar sat 24px inboard
+              of the cards directly beneath them. See branding.md, Layout.
+              Do NOT re-add `max-w-[1120px]` alongside this: the formula
+              already caps the content, and a max-w on top would re-center a
+              narrower box inside the padding and undo the alignment. */}
+          <div className="relative z-[1] px-[max(24px,calc((100vw-1120px)/2))]">
             <span className="font-mono inline-flex items-center gap-2.5 text-[11.5px] tracking-[.16em] text-white/66 uppercase">
               <span aria-hidden className="h-px w-[22px] bg-[var(--ball)]" />
               Pickleball courts · Philippines
@@ -82,13 +93,29 @@ export default async function HomePage() {
               GCash, Maya, or card.
             </p>
 
+            {/* None of the four controls below carry `outline-none`/
+                `outline-hidden`: both utilities set `--tw-outline-style: none`
+                unconditionally (Tailwind v4's outline utilities all resolve
+                `outline-style` through that one shared custom property), and
+                since a custom property's cascaded value is shared by every
+                rule that reads it on the element, the unconditional `none`
+                wins over `focus-visible:outline-2`'s `outline-style:
+                var(--tw-outline-style)` even while focus-visible is active —
+                confirmed via `getComputedStyle`, which kept reporting
+                `outlineStyle: "none"` with the right color/width/offset
+                otherwise applied. Simply not setting an outline utility for
+                the unfocused state works instead: `outline-style`'s own
+                initial value is `none`, so there is no ring until
+                `focus-visible:outline-2` supplies one, with
+                `--tw-outline-style` free to resolve to its `solid` preflight
+                default at that point. */}
             <form
               method="get"
               action="/search"
               aria-label="Search courts"
               className="mt-11 grid grid-cols-[1.25fr_1fr_1fr_auto] items-center gap-2 rounded-[20px] border border-white/[.18] bg-white/[.09] p-2 shadow-[0_24px_48px_rgba(6,20,13,.35)] backdrop-blur-[22px] max-[980px]:grid-cols-2 max-[980px]:gap-1.5"
             >
-              <div className="flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] px-[22px] transition-colors hover:bg-white/[.07] max-[980px]:col-span-2">
+              <div className="flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] px-4 transition-colors hover:bg-white/[.07] max-[980px]:col-span-2">
                 <label
                   htmlFor="home-search-city"
                   className="font-mono text-[10px] tracking-[.14em] text-white/55 uppercase"
@@ -99,7 +126,7 @@ export default async function HomePage() {
                   id="home-search-city"
                   name="city"
                   defaultValue={DEFAULT_CITY_SLUG}
-                  className="[color-scheme:dark] truncate bg-transparent text-[15.5px] font-semibold text-white outline-none"
+                  className="select-chevron-light [color-scheme:dark] truncate bg-transparent text-[15.5px] font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-[var(--ball)]"
                 >
                   {CITIES.map((city) => (
                     <option key={city.slug} value={city.slug} className="text-[var(--ink)]">
@@ -109,7 +136,7 @@ export default async function HomePage() {
                 </select>
               </div>
 
-              <div className="relative flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] border-l border-white/[.18] px-[22px] transition-colors hover:bg-white/[.07] max-[980px]:border-l-0 max-[560px]:col-span-2">
+              <div className="relative flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] border-l border-white/[.18] px-4 transition-colors hover:bg-white/[.07] max-[980px]:border-l-0 max-[560px]:col-span-2">
                 <label
                   htmlFor="home-search-date"
                   className="font-mono text-[10px] tracking-[.14em] text-white/55 uppercase"
@@ -122,7 +149,7 @@ export default async function HomePage() {
                   name="date"
                   defaultValue={today}
                   min={today}
-                  className="[color-scheme:dark] bg-transparent text-[15.5px] font-semibold text-white outline-none"
+                  className="[color-scheme:dark] bg-transparent text-[15.5px] font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-[var(--ball)] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-60 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
                 />
               </div>
 
@@ -137,7 +164,7 @@ export default async function HomePage() {
                   keeps the pair from forcing the form wider than the viewport
                   — branding.md's Layout rule says the page never scrolls
                   sideways. */}
-              <div className="relative flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] border-l border-white/[.18] px-[22px] transition-colors hover:bg-white/[.07] max-[980px]:border-l-0 max-[560px]:col-span-2">
+              <div className="relative flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] border-l border-white/[.18] px-4 transition-colors hover:bg-white/[.07] max-[980px]:border-l-0 max-[560px]:col-span-2">
                 <label
                   htmlFor="home-search-hour"
                   className="font-mono text-[10px] tracking-[.14em] text-white/55 uppercase"
@@ -150,7 +177,7 @@ export default async function HomePage() {
                     name="hour"
                     defaultValue=""
                     aria-label="Time from"
-                    className="[color-scheme:dark] min-w-0 flex-1 truncate bg-transparent text-[15.5px] font-semibold text-white outline-none"
+                    className="select-chevron-light [color-scheme:dark] min-w-0 flex-1 truncate bg-transparent text-[15.5px] font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-[var(--ball)]"
                   >
                     <option value="" className="text-[var(--ink)]">
                       Any time
@@ -169,7 +196,7 @@ export default async function HomePage() {
                     name="until"
                     defaultValue=""
                     aria-label="Time until"
-                    className="[color-scheme:dark] min-w-0 flex-1 truncate bg-transparent text-[15.5px] font-semibold text-white outline-none"
+                    className="select-chevron-light [color-scheme:dark] min-w-0 flex-1 truncate bg-transparent text-[15.5px] font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-[var(--ball)]"
                   >
                     <option value="" className="text-[var(--ink)]">
                       &mdash;
@@ -185,9 +212,9 @@ export default async function HomePage() {
 
               <button
                 type="submit"
-                className="font-display ml-2 inline-flex h-[var(--control-h)] items-center rounded-[var(--btn-radius)] bg-[var(--ball)] px-[30px] text-[15.5px] font-bold tracking-[-0.01em] text-[var(--ball-ink)] transition-[filter,transform] duration-150 hover:brightness-[1.06] active:scale-[.98] motion-reduce:transition-none max-[980px]:col-span-2 max-[980px]:mt-0.5 max-[980px]:ml-0 max-[980px]:justify-center"
+                className="font-display ml-2 inline-flex h-[var(--control-h)] items-center rounded-[var(--btn-radius)] bg-[var(--ball)] px-[30px] text-[15.5px] font-bold tracking-[-0.01em] whitespace-nowrap text-[var(--ball-ink)] transition-[filter,transform] duration-150 hover:brightness-[1.06] active:scale-[.98] motion-reduce:transition-none max-[980px]:col-span-2 max-[980px]:mt-0.5 max-[980px]:ml-0 max-[980px]:justify-center"
               >
-                Search
+                Find a Court
               </button>
             </form>
           </div>
@@ -353,7 +380,7 @@ export default async function HomePage() {
               we&rsquo;ll switch yours on.
             </p>
           </div>
-          {/* Not lime: the hero's "Search" is already this page's one lime
+          {/* Not lime: the hero's search CTA is already this page's one lime
               primary action, and branding.md forbids a second one in the
               same view. A light button reads as a strong CTA against this
               dark --court-deep panel without competing with the hero. */}
