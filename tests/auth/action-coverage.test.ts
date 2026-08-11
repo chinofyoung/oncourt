@@ -23,6 +23,17 @@ const GUARDS = [
   'requireOwner',
   'requirePlayer',
   'requireBranchAccess',
+  // The admin guard ADAPTER, not a sixth primitive guard: src/lib/admin/
+  // guard.ts's refuseUnlessAdmin() wraps requireAdmin and RETURNS a message
+  // instead of throwing, because a Server Action has no navigation channel to
+  // redirect through the way a page guard does. src/app/admin/settings/
+  // actions.ts calls it and nothing else, so the plain `requireAdmin` check
+  // above never matched that file — final whole-branch review, item #2.
+  // Legitimate to trust only because tests/admin/permissions.test.ts
+  // separately pins that refuseUnlessAdmin's own module actually calls
+  // requireAdmin; this list has no way to verify that itself, since it only
+  // greps for guard NAMES, not what they do.
+  'refuseUnlessAdmin',
 ]
 
 test('every file with "use server" calls an authorization guard', async () => {

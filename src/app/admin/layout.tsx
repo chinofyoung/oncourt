@@ -4,6 +4,7 @@ import { SideNav } from '@/components/dashboard/side-nav'
 import { signOutAction } from '@/app/auth/sign-out/actions'
 import { requireAdminPage } from '@/lib/auth/page-guards'
 import { getPendingCourtCount } from '@/lib/admin/queries'
+import { getFlaggedRefundCount } from '@/lib/refunds/queries'
 
 // Global Constraints mandate a branded focus-visible ring on every
 // interactive element. Declared locally, not imported from the listings
@@ -22,17 +23,27 @@ const FOCUS_RING =
  * Renders its own chrome rather than <Nav>, exactly like the dashboard shell,
  * so this sign-out form is the only one reachable from inside /admin/*.
  *
- * Two nav items, not the mockup's six: Payouts, Fee settings, Users and
- * Bookings are later slices (the spec's Out of scope), and an item pointing at
- * a 404 is worse than no item.
+ * Five nav items, not the mockup's six: Users and Bookings remain later
+ * slices (the spec's Out of scope), and an item pointing at a 404 is worse
+ * than no item. Settings joined Approvals and Owners once /admin/settings
+ * shipped, Payouts joined once /admin/payouts shipped, and Refunds joined once
+ * /admin/refunds shipped.
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAdminPage('/admin')
-  const pending = await getPendingCourtCount()
+  const [pending, flaggedRefunds] = await Promise.all([
+    getPendingCourtCount(),
+    getFlaggedRefundCount(),
+  ])
 
   const items = [
     { href: '/admin', label: 'Approvals', badge: pending },
     { href: '/admin/owners', label: 'Owners', badge: 0 },
+    { href: '/admin/payouts', label: 'Payouts', badge: 0 },
+    // A flagged payment is money sitting in the wrong place — visible from
+    // every admin page, not only when someone thinks to look for it.
+    { href: '/admin/refunds', label: 'Refunds', badge: flaggedRefunds },
+    { href: '/admin/settings', label: 'Settings', badge: 0 },
   ]
 
   return (

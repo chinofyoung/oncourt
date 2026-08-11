@@ -39,7 +39,10 @@ const AMENITY_VOCAB = new Set<string>(AMENITY_SLUGS)
  * automatically satisfied whenever `hour` is defined; no extra guard is
  * needed at this call site.
  */
-export function parseSearchParams(params: Record<string, string | string[] | undefined>) {
+export function parseSearchParams(
+  params: Record<string, string | string[] | undefined>,
+  fallbackCitySlug?: string | null,
+) {
   const one = (key: string) => {
     const value = params[key]
     return Array.isArray(value) ? value[0] : value
@@ -48,7 +51,23 @@ export function parseSearchParams(params: Record<string, string | string[] | und
   /** Empty/missing string treated as absent BEFORE the Number() conversion. */
   const numberOrNaN = (raw: string | undefined) => (raw === undefined || raw === '' ? NaN : Number(raw))
 
-  const citySlug = CITIES.some((c) => c.slug === one('city')) ? one('city')! : DEFAULT_CITY_SLUG
+  /**
+   * `fallbackCitySlug` is the signed-in player's home city (profiles.city_slug),
+   * passed by /search and the home hero. It only applies when the URL names no
+   * valid city of its own: an explicit `?city=` ALWAYS wins, because a shared
+   * link has to show the recipient the same city it showed the sender.
+   *
+   * Optional so every existing caller and test is unaffected, and so a
+   * signed-out visitor keeps landing on DEFAULT_CITY_SLUG exactly as before.
+   */
+  const known = (slug: string | null | undefined) =>
+    typeof slug === 'string' && CITIES.some((c) => c.slug === slug)
+
+  const citySlug = known(one('city'))
+    ? one('city')!
+    : known(fallbackCitySlug)
+      ? fallbackCitySlug!
+      : DEFAULT_CITY_SLUG
   const city = cityBySlug(citySlug)
 
   const latRaw = numberOrNaN(one('lat'))

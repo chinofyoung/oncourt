@@ -3,6 +3,7 @@ import { Nav } from '@/components/site/nav'
 import { Footer } from '@/components/site/footer'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { ProfileCompletionPanel } from '@/components/player/profile-completion-panel'
+import { Stars } from '@/components/ui/stars'
 import { requirePlayerPage } from '@/lib/auth/page-guards'
 import { getPlayerDashboard } from '@/lib/bookings/queries'
 import { formatDateLabel, formatHourRange, formatPeso } from '@/lib/format'
@@ -255,12 +256,12 @@ export default async function BookingsPage({
                         <div className="font-mono text-[11.5px] text-[var(--ink-soft)]">
                           {formatDateLabel(review.createdAt.slice(0, 10))}
                         </div>
-                        <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[14px] font-semibold text-[var(--ink)]">
-                          <span
-                            aria-hidden
-                            className="h-[7px] w-[7px] rounded-full bg-[var(--ball)] outline outline-[1.5px] outline-[var(--ink)]"
-                          />
-                          {review.rating.toFixed(1)}
+                        <div
+                          role="img"
+                          className="mt-1.5 flex items-center justify-end"
+                          aria-label={`You rated this ${review.rating} out of 5`}
+                        >
+                          <Stars value={review.rating} />
                         </div>
                       </div>
                     </div>

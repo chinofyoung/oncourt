@@ -4,14 +4,23 @@ import { StatCard } from '@/components/dashboard/stat-card'
 import { requireDashboardPage } from '@/lib/auth/page-guards'
 import { branchIdsWith } from '@/lib/staff/access'
 import { getOwnerEarnings } from '@/lib/owner/queries'
+import { getBranchesOwnerId, getOwnerLedger, getOwnerPayouts } from '@/lib/payouts/ledger'
 import { manilaToday } from '@/lib/date-manila'
-import { formatPeso } from '@/lib/format'
+import { formatDateLabel, formatPeso } from '@/lib/format'
 
 const FOCUS_RING =
   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--court)] focus-visible:outline-offset-2'
 
 const NAV_LINK =
   `inline-flex h-[var(--btn-h-sm)] items-center rounded-[var(--btn-radius)] border border-[var(--hairline)] px-3 text-[13px] font-semibold text-[var(--ink)] hover:border-[var(--court)] ${FOCUS_RING}`
+
+// Panel recipe (branding.md's Cards entry): white, 20px radius, --shadow-sm,
+// no border, dashed for the empty state — matches every other dashboard
+// page's local EMPTY_PANEL (src/app/dashboard/bookings/page.tsx,
+// src/app/dashboard/reviews/page.tsx, src/app/dashboard/staff/page.tsx).
+// Declared locally rather than imported from an admin page on purpose.
+const EMPTY_PANEL =
+  'rounded-[20px] border border-dashed border-[var(--hairline)] bg-[var(--panel)] px-6 py-12 text-center text-[var(--ink-soft)]'
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -68,6 +77,19 @@ export default async function OwnerEarningsPage({
   // guarantees the union is non-empty — access.branches would still include
   // the branch they were never granted earnings visibility on.
   const { rows, totals } = await getOwnerEarnings(branchIdsWith(access, 'view_earnings'), month)
+
+  // Payouts are OWNER-scoped, not branch-scoped: one payout covers everything
+  // an owner is owed across every branch. So this section needs the owner
+  // behind the branches this session can see earnings for — for an owner's own
+  // session that is themselves, and for a staff member it is the person who
+  // employs them.
+  const earningsBranchIds = branchIdsWith(access, 'view_earnings')
+  const ownerId = await getBranchesOwnerId(earningsBranchIds)
+
+  const [ledger, payouts] = ownerId
+    ? await Promise.all([getOwnerLedger(ownerId), getOwnerPayouts(ownerId)])
+    : [null, []]
+  const paidPayouts = payouts.filter((p) => p.status === 'paid')
 
   return (
     <>
@@ -165,6 +187,89 @@ export default async function OwnerEarningsPage({
           </tfoot>
         </table>
       </div>
+
+      {ledger && (
+        <section className="mt-10">
+          <h2 className="font-display text-[20px] font-bold tracking-[-0.02em] text-[var(--ink)]">
+            Payouts
+          </h2>
+          {/* The table above is scoped to the selected month. This section is
+              not, and cannot be: a payout covers whatever bookings were owed
+              when it was prepared, which never lines up with a calendar
+              month. Saying so is load-bearing — the month navigator sits
+              directly above, and two figures that disagree with no
+              explanation read as a bug. */}
+          {/* Two sentences, two different mismatches, both worth stating. The
+              second is the same class of problem as the first: the month
+              table's Net covers `confirmed` AND `completed` bookings
+              (REAL_BOOKING, src/lib/owner/queries.ts:95), while Pending payout
+              only ever counts `completed` ones — an owner with confirmed
+              upcoming sessions sees a month Net materially larger than the
+              Pending payout figure inches away, and unexplained that reads as
+              a bug. */}
+          <p className="mt-1 text-[13px] text-[var(--ink-soft)]">
+            All time — not filtered by the month above. Pending payout is what you&rsquo;re owed
+            for sessions that have already been played, so it can be smaller than the Net above,
+            which also counts upcoming bookings.
+          </p>
+
+          <div
+            className={`mt-4 grid gap-4 max-[980px]:grid-cols-1 ${
+              ledger.preparedCentavos > 0 ? 'grid-cols-3' : 'grid-cols-2'
+            }`}
+          >
+            <StatCard kicker="Pending payout" value={formatPeso(ledger.owedCentavos)} />
+            <StatCard kicker="Paid all time" value={formatPeso(ledger.paidCentavos)} />
+            {ledger.preparedCentavos > 0 && (
+              <StatCard kicker="Awaiting transfer" value={formatPeso(ledger.preparedCentavos)} />
+            )}
+          </div>
+
+          {ledger.owedCentavos < 0 && (
+            <p className="mt-3 text-[13px] text-[var(--ink-soft)]">
+              This is an adjustment from a refunded booking that was already paid out. It comes off
+              your next payout.
+            </p>
+          )}
+
+          <div className="mt-6">
+            {paidPayouts.length === 0 ? (
+              <p className={EMPTY_PANEL}>No payouts recorded yet.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-[20px] bg-[var(--panel)] shadow-[var(--shadow-sm)]">
+                <table className="w-full min-w-[560px] border-collapse text-left">
+                  <thead>
+                    <tr className="font-mono border-b border-[var(--hairline)] text-[11px] tracking-[.1em] text-[var(--ink-soft)] uppercase">
+                      <th className="py-3 pr-4 pl-5 font-normal">Period</th>
+                      <th className="py-3 pr-4 font-normal">Paid</th>
+                      <th className="py-3 pr-4 font-normal">Reference</th>
+                      <th className="py-3 pr-5 text-right font-normal">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paidPayouts.map((payout) => (
+                      <tr key={payout.id} className="border-b border-[var(--hairline)] last:border-b-0">
+                        <td className="py-4 pr-4 pl-5 text-[13.5px] text-[var(--ink)]">
+                          {formatDateLabel(payout.periodStart)} – {formatDateLabel(payout.periodEnd)}
+                        </td>
+                        <td className="py-4 pr-4 text-[13.5px] whitespace-nowrap text-[var(--ink)]">
+                          {payout.paidOn ? formatDateLabel(payout.paidOn) : '—'}
+                        </td>
+                        <td className="py-4 pr-4 text-[13px] text-[var(--ink-soft)]">
+                          {payout.note ?? '—'}
+                        </td>
+                        <td className="font-mono py-4 pr-5 text-right text-[13.5px] whitespace-nowrap text-[var(--ink)]">
+                          {formatPeso(payout.netCentavos)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
     </>
   )
 }

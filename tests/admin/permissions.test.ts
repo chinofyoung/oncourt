@@ -91,11 +91,18 @@ test('every admin action is guarded, and delegates to the already-tested librari
   const source = await readFile('src/app/admin/actions.ts', 'utf8')
 
   expect(source).toMatch(/^\s*['"]use server['"]/m)
-  // Six exported functions and no seventh: every export of a 'use server' file
-  // is a client-invokable endpoint, so an accidentally exported helper is an
-  // accidentally published endpoint.
-  expect(source.match(/export async function/g) ?? []).toHaveLength(6)
-  expect(source.match(/await refuseUnlessAdmin\(\)/g)).toHaveLength(6)
+  // Seven exported functions and no eighth: every export of a 'use server'
+  // file is a client-invokable endpoint, so an accidentally exported helper
+  // is an accidentally published endpoint. The seventh is
+  // updateOwnerFeeOverrideAction, the Owners-directory per-owner fee
+  // override — it must call the guard exactly like the other six.
+  // `refuseUnlessAdmin` now lives in src/lib/admin/guard.ts, a plain server
+  // module imported here (not re-exported) — it moved there specifically so
+  // a second 'use server' file (src/app/admin/settings/actions.ts) could
+  // share it without either duplicating it or adding an eighth export to
+  // this one.
+  expect(source.match(/export async function/g) ?? []).toHaveLength(7)
+  expect(source.match(/await refuseUnlessAdmin\(\)/g)).toHaveLength(7)
   expect(source).toContain('requireAdmin')
 
   // The promote screen WRAPS slice A's tested function rather than
@@ -112,4 +119,24 @@ test('every admin action is guarded, and delegates to the already-tested librari
   expect(source).not.toContain('db.execute')
   expect(source).not.toContain('update profiles')
   expect(source).not.toContain('update courts')
+})
+
+test('the admin guard adapter itself calls requireAdmin', async () => {
+  // Final whole-branch review, item #2: tests/auth/action-coverage.test.ts's
+  // repo-wide scan trusts 'refuseUnlessAdmin' as a guard purely by name — a
+  // grep for that string proves a 'use server' file CALLS something named
+  // refuseUnlessAdmin, never that the thing it calls actually guards
+  // anything. That trust is only legitimate if this assertion holds: this
+  // pins refuseUnlessAdmin's own module (src/lib/admin/guard.ts) to the real
+  // primitive, requireAdmin, imported from '@/lib/auth/guards' and actually
+  // invoked, not just mentioned in a comment. No other test in this file (or
+  // in action-coverage.test.ts) checks guard.ts's own source — the
+  // 'src/app/admin/actions.ts' test above pins THAT file's use of the
+  // adapter, but the adapter moved out of actions.ts specifically so a
+  // second 'use server' file could share it, and nothing was left behind
+  // pinning what the relocated code actually does.
+  const source = await readFile('src/lib/admin/guard.ts', 'utf8')
+  expect(source).toContain("from '@/lib/auth/guards'")
+  expect(source).toMatch(/\brequireAdmin\b/)
+  expect(source).toMatch(/await\s+requireAdmin\(\)/)
 })

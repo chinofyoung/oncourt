@@ -64,7 +64,7 @@ export default async function CheckoutPage(props: {
             </h1>
             <p className="mt-2 text-[14px] text-[var(--ink-soft)]">
               {view.status === 'pending_payment'
-                ? 'Holds last 15 minutes. Nothing was charged — pick your slots again to start a new one.'
+                ? 'This hold ran out before payment finished. Nothing was charged — pick your slots again to start a new one.'
                 : 'This booking is no longer awaiting payment. Check your bookings for its current status.'}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">

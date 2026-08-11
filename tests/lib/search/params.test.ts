@@ -192,4 +192,34 @@ describe('parseSearchParams', () => {
       expect(result.filters.until).toBeUndefined()
     })
   })
+
+  describe('fallback city', () => {
+    it('a valid fallback city is used when the URL names no city', () => {
+      const parsed = parseSearchParams({}, 'cebu-city')
+      expect(parsed.citySlug).toBe('cebu-city')
+    })
+
+    it('an explicit ?city= always beats the fallback', () => {
+      // A shared link must show the recipient the same city it showed the sender.
+      const parsed = parseSearchParams({ city: 'davao-city' }, 'cebu-city')
+      expect(parsed.citySlug).toBe('davao-city')
+    })
+
+    it('an unrecognised explicit ?city= falls through to the fallback, not straight to the default', () => {
+      // Pins the precedence chain's middle branch: an invalid URL city must
+      // land on the player's saved city, not skip it for DEFAULT_CITY_SLUG.
+      const parsed = parseSearchParams({ city: 'nope' }, 'cebu-city')
+      expect(parsed.citySlug).toBe('cebu-city')
+    })
+
+    it('an unknown fallback falls through to the default city', () => {
+      expect(parseSearchParams({}, 'atlantis').citySlug).toBe(DEFAULT_CITY_SLUG)
+      expect(parseSearchParams({}, null).citySlug).toBe(DEFAULT_CITY_SLUG)
+      expect(parseSearchParams({}, undefined).citySlug).toBe(DEFAULT_CITY_SLUG)
+    })
+
+    it('omitting the fallback entirely behaves exactly as before', () => {
+      expect(parseSearchParams({}).citySlug).toBe(DEFAULT_CITY_SLUG)
+    })
+  })
 })

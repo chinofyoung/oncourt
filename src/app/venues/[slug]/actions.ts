@@ -140,6 +140,10 @@ export async function createHoldAction(formData: FormData): Promise<{ error: str
   // The grid must show the slot as taken when the player comes back, so the
   // branch page is revalidated even though we are navigating away from it.
   revalidatePath(`/venues/${slug}`)
-  // The hold is live for 15 minutes; checkout is where it becomes a booking.
+  // The hold is temporary — its duration is admin-editable
+  // (platform_settings.hold_duration_minutes, see src/lib/admin/settings.ts)
+  // and snapshotted onto the booking's own expires_at, not a fixed number to
+  // quote here. Checkout is where it becomes a booking, and where the live
+  // countdown against that real expires_at lives.
   redirect(`/bookings/${result.bookingId}/checkout`)
 }

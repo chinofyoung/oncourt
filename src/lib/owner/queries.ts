@@ -451,6 +451,162 @@ export async function getOwnerBookings(
   }))
 }
 
+export type OwnerCalendarDay = {
+  date: string
+  bookingCount: number
+  blockCount: number
+  grossCentavos: number
+  netCentavos: number
+  bookedHours: number
+  capacityHours: number
+  occupancyPct: number | null
+}
+
+/**
+ * One row per calendar day of `month`, for the dashboard's month calendar.
+ *
+ * Generalises the single-day capacity computation in getOwnerOverview to a
+ * whole month, and MUST agree with it on occupancy — the two sit on the same
+ * dashboard, so a day reading 80% here and 40% there would make both
+ * untrustworthy. Same rules, for the same reasons documented there:
+ *   - only `approved` courts contribute CAPACITY and bookedHours (a
+ *     suspended court renders nowhere in the grid, so its hours would push
+ *     occupancy past 100%, and occupancy must keep agreeing with
+ *     getOwnerOverview, which is approved-only for the same reason);
+ *   - blocks are excluded from money and from bookedHours (a resurfacing
+ *     block reading as full occupancy would be the metric lying about the
+ *     business);
+ *   - occupancyPct is null, not 0, when there is no capacity to divide by.
+ *
+ * bookingCount/blockCount/gross/net are deliberately scoped by BRANCH, not by
+ * approved-court membership — this is narrower than it looks. A court that
+ * `replaceOperatingHours` (src/lib/listings/write.ts) or an admin suspension
+ * re-queues to `pending`/`suspended` keeps its real, already-paid bookings:
+ * the Schedule tab, the day dialog, getOwnerEarnings, and getOwnerOverview's
+ * gross/net all still show them. Scoping counts and money to `scoped_courts`
+ * (approved-only, like capacity) made a court's mid-month suspension erase its
+ * bookings and its money from this one surface while every other surface kept
+ * showing both — the calendar would contradict the rest of the dashboard about
+ * real, paid revenue. Only the CAPACITY denominator has to stay approved-only,
+ * because occupancy must stay <=100% and must keep agreeing with
+ * getOwnerOverview; the counts and takings do not share that constraint.
+ *
+ * Every day of `month` gets a row, even one with nothing on it, so the grid
+ * never has to invent missing dates — with one exception: an empty
+ * `branchIds` describes no scope at all (an owner with no branches yet), and
+ * returns `[]` outright rather than a month of zeroed-out days.
+ *
+ * `branchIds` (view_bookings) and `earningsBranchIds` (view_earnings) are
+ * deliberately two separate lists, not one — the same split
+ * `src/app/dashboard/bookings/page.tsx`'s Schedule tab already makes
+ * per-row via its own `earningsBranchIds` (see that page's `rows.map`). A
+ * staff grant can hold one without the other, so bookingCount/blockCount/
+ * bookedHours/capacityHours/occupancyPct (how busy a branch was — bookings
+ * information) are summed over `branchIds`, while grossCentavos/netCentavos
+ * (how much it made — earnings information) are summed only over the rows
+ * whose OWN branch is also in `earningsBranchIds`. Fixed here after a review
+ * caught the month grid and the day dialog both printing gross/net for every
+ * branch in `branchIds`, leaking earnings to a view_bookings-only session
+ * that the Schedule tab's own table already knew to redact.
+ */
+export async function getOwnerMonthCalendar(
+  branchIds: string[],
+  earningsBranchIds: string[],
+  month: string,
+  branchId?: string,
+): Promise<OwnerCalendarDay[]> {
+  if (branchIds.length === 0) return []
+  const branchFilter = branchId ? sql`and sc.branch_id = ${branchId}::uuid` : sql``
+  // Same `?branch=` narrowing as `branchFilter` above, but against `bk` —
+  // `agg` no longer joins `scoped_courts` for its counts/money (see the
+  // function doc comment), so it has no `sc` alias to filter on.
+  const bookingsBranchFilter = branchId ? sql`and bk.branch_id = ${branchId}::uuid` : sql``
+  const firstDay = `${month}-01`
+
+  const result = await db.execute(sql`
+    with scoped_courts as (${approvedCourtsIn(branchIds)}),
+    days as (
+      select generate_series(
+        ${firstDay}::date,
+        (${firstDay}::date + interval '1 month' - interval '1 day')::date,
+        interval '1 day'
+      )::date as day
+    ),
+    capacity as (
+      select d.day,
+        coalesce(sum(oh.closes_hour - oh.opens_hour), 0)::int as capacity_hours
+      from days d
+      left join scoped_courts sc on true ${branchFilter}
+      left join court_operating_hours oh
+        on oh.court_id = sc.court_id
+       and oh.day_of_week = extract(dow from d.day)::int
+      group by d.day
+    ),
+    agg as (
+      select to_char(bk.starts_at at time zone 'Asia/Manila', 'YYYY-MM-DD') as day,
+        -- Counts and money are scoped by BRANCH (bk.branch_id, via the WHERE
+        -- clause below), NOT by approved-court membership — a non-approved
+        -- court's real bookings still count here even though they contribute
+        -- no capacity. See the function doc comment.
+        count(*) filter (where bk.status <> 'blocked')::int as booking_count,
+        count(*) filter (where bk.status = 'blocked')::int as block_count,
+        -- Money is filtered to earningsBranchIds ON TOP OF the row already
+        -- being a real (non-blocked) booking — a branch outside this list
+        -- contributes 0, never its actual gross/net, regardless of how many
+        -- bookings it has.
+        coalesce(sum(bk.total_charged_centavos)
+                 filter (where bk.status <> 'blocked'
+                     and bk.branch_id = any (${sql.param(earningsBranchIds)}::uuid[])), 0)::bigint as gross,
+        coalesce(sum(bk.owner_net_centavos)
+                 filter (where bk.status <> 'blocked'
+                     and bk.branch_id = any (${sql.param(earningsBranchIds)}::uuid[])), 0)::bigint as net,
+        -- bookedHours is the occupancy NUMERATOR, so unlike the counts and
+        -- money above it stays scoped to scoped_courts (approved-only) —
+        -- the same set the capacity CTE's denominator uses — or a suspended
+        -- court's hours would push a day's occupancy past 100%.
+        coalesce(sum(extract(epoch from (bk.ends_at - bk.starts_at)) / 3600)
+                 filter (where bk.status <> 'blocked'
+                     and bk.court_id in (select court_id from scoped_courts sc where true ${branchFilter})),
+                 0)::float8 as booked_hours
+      from bookings bk
+      where bk.branch_id = any (${sql.param(branchIds)}::uuid[])
+        ${bookingsBranchFilter}
+        and ${SCHEDULE_ROW}
+        -- Bound to the month. Without this the CTE aggregates every booking
+        -- this owner has ever had and throws all but ~30 days away in the
+        -- join below — correct, but it scans the whole table every render.
+        and to_char(bk.starts_at at time zone 'Asia/Manila', 'YYYY-MM') = ${month}
+      group by 1
+    )
+    select to_char(c.day, 'YYYY-MM-DD') as date,
+      c.capacity_hours,
+      coalesce(a.booking_count, 0) as booking_count,
+      coalesce(a.block_count, 0)   as block_count,
+      coalesce(a.gross, 0)         as gross,
+      coalesce(a.net, 0)           as net,
+      coalesce(a.booked_hours, 0)  as booked_hours
+    from capacity c
+    left join agg a on a.day = to_char(c.day, 'YYYY-MM-DD')
+    order by c.day
+  `)
+
+  return result.rows.map((row) => {
+    const capacityHours = Number(row.capacity_hours)
+    const bookedHours = Number(row.booked_hours)
+    return {
+      date: row.date as string,
+      bookingCount: Number(row.booking_count),
+      blockCount: Number(row.block_count),
+      grossCentavos: Number(row.gross),
+      netCentavos: Number(row.net),
+      bookedHours,
+      capacityHours,
+      occupancyPct:
+        capacityHours === 0 ? null : Math.round((bookedHours / capacityHours) * 100),
+    }
+  })
+}
+
 /**
  * Per-branch earnings for one Manila calendar month, plus totals summed in
  * TypeScript (not a second SQL rollup) — that is what makes the "rollup

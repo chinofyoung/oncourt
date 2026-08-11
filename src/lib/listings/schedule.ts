@@ -21,6 +21,7 @@
  */
 
 import { formatHourRange } from '@/lib/format'
+import { PESOS_TO_CENTAVOS } from '@/lib/money/units'
 
 export type OperatingHoursDay = { dayOfWeek: number; opensHour: number; closesHour: number }
 export type RateBand = { startHour: number; endHour: number; priceCentavos: number }
@@ -40,13 +41,6 @@ export const WEEKDAY_LABELS = [
   'Friday',
   'Saturday',
 ] as const
-
-/**
- * The form asks for whole pesos; the column stores integer centavos.
- * Integer x 100 is exact in JS, which is the whole reason the field is not a
- * decimal one — see the money rule in the plan's Global Constraints.
- */
-export const PESOS_TO_CENTAVOS = 100
 
 export type HoursFailure = 'no_open_day' | 'invalid_window'
 export type BandsFailure = 'no_bands' | 'invalid_band' | 'bands_do_not_tile'

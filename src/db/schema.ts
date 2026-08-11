@@ -1,10 +1,11 @@
-import { pgTable, foreignKey, unique, check, uuid, text, integer, timestamp, index, boolean, jsonb, smallint, pgEnum } from "drizzle-orm/pg-core"
+import { pgTable, foreignKey, unique, check, uuid, text, integer, timestamp, index, boolean, jsonb, date, smallint, primaryKey, pgEnum } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 export const bookingStatus = pgEnum("booking_status", ['pending_payment', 'confirmed', 'completed', 'expired', 'refunded_manual', 'blocked'])
 export const courtEnvironment = pgEnum("court_environment", ['indoor', 'outdoor'])
 export const courtStatus = pgEnum("court_status", ['pending', 'approved', 'rejected', 'suspended'])
 export const paymentStatus = pgEnum("payment_status", ['pending', 'paid', 'failed'])
+export const payoutLineKind = pgEnum("payout_line_kind", ['payment', 'clawback'])
 export const payoutStatus = pgEnum("payout_status", ['pending', 'paid'])
 export const platformFeeMode = pgEnum("platform_fee_mode", ['percentage', 'flat'])
 export const processorFeeBearer = pgEnum("processor_fee_bearer", ['player', 'owner', 'platform'])
@@ -34,6 +35,7 @@ export const profiles = pgTable("profiles", {
 		}).onDelete("cascade"),
 	unique("profiles_slug_key").on(table.slug),
 	check("profiles_fee_override_pair", sql`((platform_fee_mode IS NULL) AND (platform_fee_value IS NULL)) OR ((platform_fee_mode IS NOT NULL) AND (platform_fee_value IS NOT NULL) AND (platform_fee_value > 0))`),
+	check("profiles_fee_percentage_ceiling", sql`(platform_fee_mode IS DISTINCT FROM 'percentage'::platform_fee_mode) OR (platform_fee_value <= 10000)`),
 ]);
 
 export const branches = pgTable("branches", {
@@ -173,40 +175,6 @@ export const branchStaff = pgTable("branch_staff", {
 	check("branch_staff_some_permission", sql`view_bookings OR block_slots OR manage_courts OR view_earnings`),
 ]);
 
-export const payments = pgTable("payments", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	bookingId: uuid("booking_id").notNull(),
-	provider: text().default('paymongo').notNull(),
-	providerSessionId: text("provider_session_id"),
-	providerPaymentId: text("provider_payment_id"),
-	paymentMethod: text("payment_method"),
-	amountCentavos: integer("amount_centavos").notNull(),
-	processorFeeCentavos: integer("processor_fee_centavos").default(0).notNull(),
-	status: paymentStatus().default('pending').notNull(),
-	needsRefund: boolean("needs_refund").default(false).notNull(),
-	rawEvent: jsonb("raw_event"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	paidAt: timestamp("paid_at", { withTimezone: true, mode: 'string' }),
-}, (table) => [
-	index("payments_booking_id_idx").using("btree", table.bookingId.asc().nullsLast().op("uuid_ops")),
-	index("payments_needs_refund_idx").using("btree", table.needsRefund.asc().nullsLast().op("bool_ops")).where(sql`needs_refund`),
-	index("payments_payment_method_idx").using("btree", table.paymentMethod.asc().nullsLast().op("text_ops")),
-	index("payments_provider_session_id_idx").using("btree", table.providerSessionId.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.bookingId],
-			foreignColumns: [bookings.id],
-			name: "payments_booking_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.paymentMethod],
-			foreignColumns: [processorRates.paymentMethod],
-			name: "payments_payment_method_fkey"
-		}),
-	unique("payments_provider_payment_id_key").on(table.providerPaymentId),
-	check("payments_amount_centavos_check", sql`amount_centavos >= 0`),
-	check("payments_processor_fee_centavos_check", sql`processor_fee_centavos >= 0`),
-]);
-
 export const bookings = pgTable("bookings", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	courtId: uuid("court_id").notNull(),
@@ -259,6 +227,7 @@ export const bookings = pgTable("bookings", {
 	check("bookings_blocked_is_free", sql`(status <> 'blocked'::booking_status) OR ((court_fee_centavos = 0) AND (transaction_fee_centavos = 0) AND (total_charged_centavos = 0) AND (platform_fee_centavos = 0) AND (processor_fee_centavos = 0) AND (owner_net_centavos = 0))`),
 	check("bookings_court_fee_centavos_check", sql`court_fee_centavos >= 0`),
 	check("bookings_hold_has_expiry", sql`(status <> 'pending_payment'::booking_status) OR (expires_at IS NOT NULL)`),
+	check("bookings_owner_net_non_negative", sql`owner_net_centavos >= 0`),
 	check("bookings_platform_fee_centavos_check", sql`platform_fee_centavos >= 0`),
 	check("bookings_player_unless_blocked", sql`(status = 'blocked'::booking_status) OR (player_id IS NOT NULL)`),
 	check("bookings_processor_fee_centavos_check", sql`processor_fee_centavos >= 0`),
@@ -266,6 +235,66 @@ export const bookings = pgTable("bookings", {
 	check("bookings_time_order", sql`ends_at > starts_at`),
 	check("bookings_total_charged_centavos_check", sql`total_charged_centavos >= 0`),
 	check("bookings_transaction_fee_centavos_check", sql`transaction_fee_centavos >= 0`),
+]);
+
+export const payments = pgTable("payments", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	bookingId: uuid("booking_id").notNull(),
+	provider: text().default('paymongo').notNull(),
+	providerSessionId: text("provider_session_id"),
+	providerPaymentId: text("provider_payment_id"),
+	paymentMethod: text("payment_method"),
+	amountCentavos: integer("amount_centavos").notNull(),
+	processorFeeCentavos: integer("processor_fee_centavos").default(0).notNull(),
+	status: paymentStatus().default('pending').notNull(),
+	needsRefund: boolean("needs_refund").default(false).notNull(),
+	rawEvent: jsonb("raw_event"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	paidAt: timestamp("paid_at", { withTimezone: true, mode: 'string' }),
+	refundedAt: timestamp("refunded_at", { withTimezone: true, mode: 'string' }),
+	refundNote: text("refund_note"),
+}, (table) => [
+	index("payments_booking_id_idx").using("btree", table.bookingId.asc().nullsLast().op("uuid_ops")),
+	index("payments_needs_refund_idx").using("btree", table.needsRefund.asc().nullsLast().op("bool_ops")).where(sql`needs_refund`),
+	index("payments_payment_method_idx").using("btree", table.paymentMethod.asc().nullsLast().op("text_ops")),
+	index("payments_provider_session_id_idx").using("btree", table.providerSessionId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.bookingId],
+			foreignColumns: [bookings.id],
+			name: "payments_booking_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.paymentMethod],
+			foreignColumns: [processorRates.paymentMethod],
+			name: "payments_payment_method_fkey"
+		}),
+	unique("payments_provider_payment_id_key").on(table.providerPaymentId),
+	check("payments_amount_centavos_check", sql`amount_centavos >= 0`),
+	check("payments_processor_fee_centavos_check", sql`processor_fee_centavos >= 0`),
+]);
+
+export const payouts = pgTable("payouts", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	ownerId: uuid("owner_id").notNull(),
+	periodStart: date("period_start").notNull(),
+	periodEnd: date("period_end").notNull(),
+	grossCentavos: integer("gross_centavos").notNull(),
+	feeCentavos: integer("fee_centavos").notNull(),
+	netCentavos: integer("net_centavos").notNull(),
+	status: payoutStatus().default('pending').notNull(),
+	paidAt: timestamp("paid_at", { withTimezone: true, mode: 'string' }),
+	note: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("payouts_owner_id_idx").using("btree", table.ownerId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.ownerId],
+			foreignColumns: [profiles.id],
+			name: "payouts_owner_id_fkey"
+		}),
+	check("payouts_net_positive", sql`net_centavos > 0`),
+	check("payouts_paid_has_timestamp", sql`(status = 'paid'::payout_status) = (paid_at IS NOT NULL)`),
+	check("payouts_period_ordered", sql`period_end >= period_start`),
 ]);
 
 export const platformSettings = pgTable("platform_settings", {
@@ -278,6 +307,7 @@ export const platformSettings = pgTable("platform_settings", {
 }, (table) => [
 	check("platform_settings_fee_value_positive", sql`default_platform_fee_value > 0`),
 	check("platform_settings_hold_positive", sql`hold_duration_minutes > 0`),
+	check("platform_settings_percentage_ceiling", sql`(default_platform_fee_mode IS DISTINCT FROM 'percentage'::platform_fee_mode) OR (default_platform_fee_value <= 10000)`),
 	check("platform_settings_singleton", sql`CHECK (id)`),
 ]);
 
@@ -319,4 +349,24 @@ export const processorRates = pgTable("processor_rates", {
 }, (table) => [
 	check("processor_rates_fixed_fee_centavos_check", sql`fixed_fee_centavos >= 0`),
 	check("processor_rates_percentage_bps_check", sql`percentage_bps >= 0`),
+]);
+
+export const payoutBookings = pgTable("payout_bookings", {
+	bookingId: uuid("booking_id").notNull(),
+	kind: payoutLineKind().notNull(),
+	payoutId: uuid("payout_id").notNull(),
+	netCentavos: integer("net_centavos").notNull(),
+}, (table) => [
+	index("payout_bookings_payout_id_idx").using("btree", table.payoutId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.bookingId],
+			foreignColumns: [bookings.id],
+			name: "payout_bookings_booking_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.payoutId],
+			foreignColumns: [payouts.id],
+			name: "payout_bookings_payout_id_fkey"
+		}),
+	primaryKey({ columns: [table.bookingId, table.kind], name: "payout_bookings_pkey"}),
 ]);

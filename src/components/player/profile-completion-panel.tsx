@@ -51,9 +51,13 @@ function Tick({ done }: { done: boolean }) {
 function Message({ state }: { state: ProfileFormState }) {
   if (!state) return null
   return 'error' in state ? (
-    <p className="mt-2 text-[13px] text-[#8A4A1E]">{state.error}</p>
+    <p role="alert" className="mt-2 text-[13px] text-[var(--slot-booked-ink)]">
+      {state.error}
+    </p>
   ) : (
-    <p className="mt-2 text-[13px] text-[var(--court)]">{state.message}</p>
+    <p role="status" className="mt-2 text-[13px] text-[var(--court)]">
+      {state.message}
+    </p>
   )
 }
 

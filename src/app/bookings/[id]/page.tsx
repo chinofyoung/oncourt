@@ -173,7 +173,8 @@ export default async function ReceiptPage(props: {
         {unpaidHold && (
           <div className="mt-6 max-w-[560px]">
             <p className="text-sm text-[var(--ink-soft)]">
-              These slots are held but not paid for yet. Holds last 15 minutes.
+              These slots are held but not paid for yet — checkout shows the
+              live countdown on exactly how much time is left.
             </p>
             {/* The receipt has no other button, so branding.md's "never two
                 lime buttons in one view" holds — this is the view's single

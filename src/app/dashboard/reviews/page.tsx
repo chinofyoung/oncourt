@@ -3,6 +3,7 @@ import { requireDashboardPage } from '@/lib/auth/page-guards'
 import { branchIdsWith } from '@/lib/staff/access'
 import { getOwnerReviews, OWNER_REVIEWS_LIMIT } from '@/lib/owner/reviews'
 import { formatDateLabel } from '@/lib/format'
+import { Stars } from '@/components/ui/stars'
 
 // Declared locally, not imported from src/app/dashboard/listings/form-ui.tsx:
 // that module is 'use client', and importing it into a Server Component would
@@ -130,16 +131,18 @@ export default async function ReviewsPage({
                     <div className="font-mono text-[11.5px] text-[var(--ink-soft)]">
                       {formatDateLabel(review.createdOn)}
                     </div>
-                    {/* branding.md's Rating mark: lime dot (7px, ink outline)
-                        + bold number. Inline rather than <Rating>, which is
-                        the AGGREGATE component (average + count in parens) and
-                        renders nothing at all when count is 0. */}
-                    <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[14px] font-semibold text-[var(--ink)]">
-                      <span
-                        aria-hidden
-                        className="h-[7px] w-[7px] rounded-full bg-[var(--ball)] outline outline-[1.5px] outline-[var(--ink)]"
-                      />
-                      {review.rating.toFixed(1)}
+                    {/* The single-review mark. Uses the Stars primitive rather
+                        than <Rating>, which is the AGGREGATE component
+                        (average + count in parens, renders nothing at zero).
+                        Both single-review surfaces — this one and the player's
+                        own reviews on /bookings — used to hand-roll their own
+                        copy of this markup because no primitive existed. */}
+                    <div
+                      role="img"
+                      className="mt-1.5 flex items-center justify-end"
+                      aria-label={`Rated ${review.rating} out of 5`}
+                    >
+                      <Stars value={review.rating} />
                     </div>
                   </div>
                 </div>

@@ -3,7 +3,7 @@
 import { useActionState } from 'react'
 import { createReviewAction, type ReviewFormState } from './actions'
 
-const FOCUS_RING = 'outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--court)] focus-visible:outline-offset-2'
+const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--court)] focus-visible:outline-offset-2'
 
 /**
  * The one client component on this page. It exists for a specific reason: a
@@ -25,21 +25,44 @@ export function ReviewForm({ bookingId }: { bookingId: string }) {
     <form action={formAction} className="flex flex-col gap-2">
       <input type="hidden" name="bookingId" value={bookingId} />
 
-      <label className="sr-only" htmlFor={`rating-${bookingId}`}>
-        Rating
-      </label>
-      <select
-        id={`rating-${bookingId}`}
-        name="rating"
-        defaultValue="5"
-        className={`h-[var(--btn-h-sm)] rounded-[var(--btn-radius)] border border-[var(--hairline)] bg-[var(--panel)] px-2 text-[13px] text-[var(--ink)] ${FOCUS_RING}`}
-      >
-        <option value="5">5 — Excellent</option>
-        <option value="4">4 — Good</option>
-        <option value="3">3 — Okay</option>
-        <option value="2">2 — Poor</option>
-        <option value="1">1 — Bad</option>
-      </select>
+      <fieldset className="flex flex-col gap-1">
+        <legend className="sr-only">Rating</legend>
+        {/* Radios, not click handlers on spans. A radio group is arrow-key
+            navigable, announced as a grouped choice, and submits without JS —
+            all three of which a div-with-onClick star picker silently loses.
+            The stars are drawn from :checked in CSS, so there is no state to
+            manage here at all.
+
+            Rendered in natural DOM order (1 first). `:has(~ label input:checked)`
+            looks forward through later siblings, so star 1 fills when star 1
+            itself is checked or any later star (2–5) is checked, star 2 fills
+            when 3–5 is checked, and so on — every star up to and including the
+            checked one lights up. */}
+        <div className="flex justify-end gap-0.5">
+          {[
+            { value: '1', label: '1 — Bad' },
+            { value: '2', label: '2 — Poor' },
+            { value: '3', label: '3 — Okay' },
+            { value: '4', label: '4 — Good' },
+            { value: '5', label: '5 — Excellent' },
+          ].map((option) => (
+            <label
+              key={option.value}
+              className="cursor-pointer p-0.5 text-[18px] leading-none text-[var(--hairline)] transition-colors has-[:checked]:text-[var(--court)] hover:text-[var(--court)] has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[3px] has-[:focus-visible]:outline-[var(--court)] motion-reduce:transition-none [&:has(~label:hover)]:text-[var(--court)] [&:has(~label_input:checked)]:text-[var(--court)]"
+            >
+              <input
+                type="radio"
+                name="rating"
+                value={option.value}
+                defaultChecked={option.value === '5'}
+                className="sr-only"
+              />
+              <span aria-hidden>★</span>
+              <span className="sr-only">{option.label}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <label className="sr-only" htmlFor={`body-${bookingId}`}>
         Review

@@ -124,10 +124,38 @@ export async function seedBranchWithCourts(courtCount = 2) {
  * Call this from an `afterAll` in any test file that uses these helpers.
  * tests/setup.ts does it globally (via a dynamic import, so files that never
  * touch these helpers pay no cost and this module is a no-op for them).
+ *
+ * FK-safe order: payout_bookings -> payouts -> reviews -> payments ->
+ * bookings -> auth.users.
  */
 export async function teardownFixtures(): Promise<void> {
   if (createdUserIds.length === 0) return
   const ids = createdUserIds.splice(0, createdUserIds.length)
+
+  // Must precede BOTH the bookings delete and the auth.users delete:
+  // payout_bookings.booking_id and .payout_id are NO ACTION (RESTRICT), for
+  // the same reason payments and reviews are — a payout line is a financial
+  // record. The booking predicate mirrors the bookings delete below exactly,
+  // so no line can be missed by a row a later statement removes.
+  await db.execute(sql`
+    delete from payout_bookings
+    where payout_id in (
+        select id from payouts where owner_id = any (${sql.param(ids)}::uuid[])
+      )
+       or booking_id in (
+        select id from bookings
+        where player_id = any (${sql.param(ids)}::uuid[])
+           or created_by = any (${sql.param(ids)}::uuid[])
+           or branch_id in (
+             select id from branches where owner_id = any (${sql.param(ids)}::uuid[])
+           )
+      )
+  `)
+
+  // payouts.owner_id is RESTRICT, so this must precede the auth.users delete.
+  await db.execute(sql`
+    delete from payouts where owner_id = any (${sql.param(ids)}::uuid[])
+  `)
 
   // Must precede the bookings delete: reviews.booking_id is NO ACTION
   // (a booking is a financial record), so a surviving review blocks its
@@ -334,6 +362,55 @@ export async function seedPayment(opts: {
     returning id
   `)
   return result.rows[0].id as string
+}
+
+/**
+ * A `payouts` row. Defaults describe a plausible prepared payout; every field
+ * is overridable because the schema tests exist specifically to push each
+ * constraint over its edge.
+ *
+ * No teardown tracking of its own: teardownFixtures() deletes payouts by
+ * tracked owner_id, and payout_bookings before them (both FKs are RESTRICT).
+ */
+export async function seedPayout(opts: {
+  ownerId: string
+  netCentavos?: number
+  grossCentavos?: number
+  periodStart?: string
+  periodEnd?: string
+  status?: 'pending' | 'paid'
+}): Promise<string> {
+  const net = opts.netCentavos ?? 50000
+  const gross = opts.grossCentavos ?? net + 5000
+  const status = opts.status ?? 'pending'
+  const result = await db.execute(sql`
+    insert into payouts (
+      owner_id, period_start, period_end,
+      gross_centavos, fee_centavos, net_centavos, status, paid_at
+    ) values (
+      ${opts.ownerId}::uuid,
+      ${opts.periodStart ?? '2026-08-01'}::date,
+      ${opts.periodEnd ?? '2026-08-07'}::date,
+      ${gross}, ${gross - net}, ${net}, ${status}::payout_status,
+      ${status === 'paid' ? new Date().toISOString() : null}::timestamptz
+    )
+    returning id
+  `)
+  return result.rows[0].id as string
+}
+
+/** A single `payout_bookings` line. Sign is the caller's responsibility. */
+export async function seedPayoutLine(opts: {
+  payoutId: string
+  bookingId: string
+  kind: 'payment' | 'clawback'
+  netCentavos: number
+}): Promise<void> {
+  await db.execute(sql`
+    insert into payout_bookings (booking_id, kind, payout_id, net_centavos)
+    values (${opts.bookingId}::uuid, ${opts.kind}::payout_line_kind,
+            ${opts.payoutId}::uuid, ${opts.netCentavos})
+  `)
 }
 
 /**

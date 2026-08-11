@@ -94,3 +94,35 @@ export function shiftDay(date: string, days: number): string {
   const [year, month, day] = date.split('-').map(Number)
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
 }
+
+const MONTH_RE = /^\d{4}-\d{2}$/
+
+/** The current Manila calendar month, `YYYY-MM`. */
+export function manilaMonth(): string {
+  return manilaToday().slice(0, 7)
+}
+
+/**
+ * True only for a `YYYY-MM` string naming a real month. The regex alone
+ * accepts `2026-13`, so the month number is range-checked too.
+ *
+ * Matches the format `getOwnerEarnings` already takes, deliberately: two
+ * month-based surfaces on the same dashboard must not disagree about what a
+ * month string looks like.
+ */
+export function isValidCalendarMonth(month: string): boolean {
+  if (!MONTH_RE.test(month)) return false
+  const monthNumber = Number(month.slice(5, 7))
+  return monthNumber >= 1 && monthNumber <= 12
+}
+
+/**
+ * Shifts a `YYYY-MM` month by `months`. Pure `Date.UTC` arithmetic with no
+ * timezone offsets, for the same reason `shiftDay` above avoids them — see
+ * its comment. Day 1 is used only as an anchor and never read back.
+ */
+export function shiftMonth(month: string, months: number): string {
+  const [year, monthNumber] = month.split('-').map(Number)
+  const shifted = new Date(Date.UTC(year, monthNumber - 1 + months, 1))
+  return shifted.toISOString().slice(0, 7)
+}

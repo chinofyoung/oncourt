@@ -21,6 +21,20 @@ describe('formatPeso', () => {
   it('separates thousands', () => {
     expect(formatPeso(100000)).toBe('₱1,000')
   })
+
+  // Negative centavos are real money: an owner who was paid out and then had a
+  // booking refunded carries a negative owedCentavos (src/lib/payouts/ledger.ts).
+  // The sign belongs outside the symbol — `₱-270` is what a naive
+  // `'₱' + n.toLocaleString()` produces.
+  it('puts the minus sign before the peso symbol', () => {
+    expect(formatPeso(-27000)).toBe('-₱270')
+    expect(formatPeso(-102290)).toBe('-₱1,022.90')
+    expect(formatPeso(-2230)).toBe('-₱22.30')
+  })
+
+  it('renders negative zero as plain zero', () => {
+    expect(formatPeso(-0)).toBe('₱0')
+  })
 })
 
 describe('formatPriceFrom', () => {

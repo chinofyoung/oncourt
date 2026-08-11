@@ -8,6 +8,7 @@ import { manilaToday } from '@/lib/date-manila'
 import { formatHour } from '@/lib/format'
 import { HOUR_OPTIONS, endHourOptions } from '@/lib/search/hours'
 import { getOptionalUser } from '@/lib/auth/guards'
+import { getPlayerCitySlug } from '@/lib/profile/queries'
 import { ownerCtaHref } from '@/lib/site/owner-cta'
 
 // Ported from design/mockups/home.html. Structure: overlay Nav inside a
@@ -31,10 +32,13 @@ import { ownerCtaHref } from '@/lib/site/owner-cta'
 export default async function HomePage() {
   const { featured, cities, openNowCount } = await getHomeData()
   // A second session read on this page (<Nav> does its own): one claims read
-  // and one indexed profiles lookup, so that the page's own owner CTA lands
-  // somewhere useful instead of on /login for an owner who is already signed
-  // in. App Router gives a Server Component no way to share <Nav>'s result.
+  // plus two indexed profiles lookups on the same row (role, for the owner CTA
+  // below, and home city, for the search form's default) — so that the page's
+  // own owner CTA lands somewhere useful instead of on /login for an owner who
+  // is already signed in, and the search form defaults to the player's saved
+  // city. App Router gives a Server Component no way to share <Nav>'s result.
   const user = await getOptionalUser()
+  const playerCitySlug = user ? await getPlayerCitySlug(user.id) : null
   const today = manilaToday()
 
   // getHomeData() already returns one row per named city (slug, name,
@@ -125,7 +129,9 @@ export default async function HomePage() {
                 <select
                   id="home-search-city"
                   name="city"
-                  defaultValue={DEFAULT_CITY_SLUG}
+                  defaultValue={
+                    CITIES.some((c) => c.slug === playerCitySlug) ? playerCitySlug! : DEFAULT_CITY_SLUG
+                  }
                   className="select-chevron-light [color-scheme:dark] truncate bg-transparent text-[15.5px] font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-[var(--ball)]"
                 >
                   {CITIES.map((city) => (

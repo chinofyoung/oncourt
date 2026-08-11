@@ -15,12 +15,23 @@ const EN_DASH = '–'
 /**
  * `₱300` for whole pesos, `₱1,022.90` when there are centavos. Never renders
  * a trailing `.00`, because branding.md's examples don't.
+ *
+ * NEGATIVES: the sign goes OUTSIDE the symbol — `-₱270`, never `₱-270`, which
+ * is what a naive `'₱' + n.toLocaleString()` produces. Negative centavos are
+ * real money here, not a guard against nonsense input: an owner who was paid
+ * out and then had a booking refunded carries a negative balance
+ * (owedCentavos in src/lib/payouts/ledger.ts), which the payouts list's Owed
+ * column, the earnings page's Pending-payout card and the payout detail page's
+ * clawback line all render. Handled at this edge, once, rather than at each
+ * call site.
  */
 export function formatPeso(centavos: number): string {
-  const hasFraction = centavos % 100 !== 0
+  const negative = centavos < 0
+  const magnitude = Math.abs(centavos)
+  const hasFraction = magnitude % 100 !== 0
   return (
-    '₱' +
-    (centavos / 100).toLocaleString('en-US', {
+    (negative ? '-₱' : '₱') +
+    (magnitude / 100).toLocaleString('en-US', {
       minimumFractionDigits: hasFraction ? 2 : 0,
       maximumFractionDigits: 2,
     })

@@ -1,8 +1,14 @@
+import { Stars } from '@/components/ui/stars'
+
 /**
- * design/branding.md, Rating: lime dot (7px, ink outline) + bold number,
- * count in parens muted.
+ * A branch's aggregate rating: stars, the average, and the review count.
  *
- * Renders nothing at all when a branch has no reviews — a "0.0 (0)" badge
+ * The stars round to the nearest half, so 4.3 and 4.7 look identical — which
+ * is exactly why the number stays beside them rather than being replaced by
+ * them. The database holds that precision and this surface has always shown
+ * it; stars are the fast read, the number is the true one.
+ *
+ * Renders nothing at all when a branch has no reviews — a "0 stars (0)" row
  * reads as a bad rating rather than an absent one.
  */
 export function Rating({
@@ -16,11 +22,12 @@ export function Rating({
 }) {
   if (average === null || count === 0) return null
   return (
-    <span className="inline-flex items-center gap-1.5 text-sm">
-      <span
-        aria-hidden
-        className="h-[7px] w-[7px] rounded-full border border-[var(--ink)] bg-[var(--ball)]"
-      />
+    <span
+      role="img"
+      className="inline-flex items-center gap-1.5 text-sm"
+      aria-label={`Rated ${average.toFixed(1)} out of 5 from ${count} ${count === 1 ? 'review' : 'reviews'}`}
+    >
+      <Stars value={average} />
       <span className={`font-semibold ${onDark ? 'text-white' : 'text-[var(--ink)]'}`}>
         {average.toFixed(1)}
       </span>

@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { AuthError, requireAdmin } from '@/lib/auth/guards'
+import { refuseUnlessAdmin } from '@/lib/admin/guard'
 import {
   MODERATION_FAILURE_MESSAGES,
   SCHEDULE_BLOCK_MESSAGES,
@@ -9,20 +9,33 @@ import {
 } from '@/lib/admin/moderation'
 import { findProfileByEmail, type AdminProfileLookup } from '@/lib/admin/queries'
 import { approveCourt, rejectCourt, suspendCourt, unsuspendCourt } from '@/lib/admin/write'
+import {
+  updateOwnerFeeOverride,
+  type FeeMode,
+  type ProcessorFeeBearer,
+} from '@/lib/admin/settings'
+import { formatPeso } from '@/lib/format'
+import { parsePercentToBps, parsePesosToCentavos } from '@/lib/money/units'
 import { parseStaffEmail, promoteToOwner } from '@/lib/staff/write'
 
 /**
  * The admin surface's writes.
  *
- * This file exports only six async guarded actions and the two state types its
- * forms bind to — every OTHER export of a 'use server' file becomes a
- * client-invokable endpoint. All logic and all SQL live in the modules under
- * src/lib/admin/ and src/lib/staff/, where they are unit-tested.
+ * This file exports only seven async guarded actions (approveCourtAction,
+ * rejectCourtAction, suspendCourtAction, unsuspendCourtAction,
+ * lookupPlayerAction, promoteOwnerAction, updateOwnerFeeOverrideAction) and
+ * the two state types its forms bind to — every OTHER export of a 'use
+ * server' file becomes a client-invokable endpoint. All logic and all SQL
+ * live in the modules under src/lib/admin/ and src/lib/staff/, where they are
+ * unit-tested.
  *
- * ONE GUARD SHAPE: requireAdmin, on all six. There is no per-branch dimension
- * to an admin's authority, and inventing one here would contradict every guard
- * in src/lib/auth/guards.ts, each of which already lets an admin through
- * unconditionally.
+ * ONE GUARD SHAPE: requireAdmin, on all seven, via `refuseUnlessAdmin` in
+ * src/lib/admin/guard.ts — moved there rather than defined and exported
+ * locally, so the guard src/app/admin/settings/actions.ts also needs is
+ * imported, not duplicated, without adding a second published endpoint to
+ * this file. There is no per-branch dimension to an admin's authority, and
+ * inventing one here would contradict every guard in src/lib/auth/guards.ts,
+ * each of which already lets an admin through unconditionally.
  *
  * A submitted id is safe to guard on because every write underneath is scoped
  * by something the caller cannot forge: the moderation writes are status-
@@ -38,27 +51,12 @@ export type AdminFormState = { ok: true; message: string } | { error: string } |
 export type OwnerLookupState = { player: AdminProfileLookup } | { error: string } | null
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const NOT_ADMIN = 'That action is for admins only.'
 const BAD_TARGET = "That doesn't look right — reload the page and try again."
 
 /** Shape-checked before it reaches a `::uuid` cast, which would raise 22P02. */
 function idFrom(formData: FormData, key: string): string | null {
   const value = String(formData.get(key) ?? '')
   return UUID_RE.test(value) ? value : null
-}
-
-/**
- * The guard, once. Returns the message to show, or null to proceed — every
- * action's first two lines.
- */
-async function refuseUnlessAdmin(): Promise<string | null> {
-  try {
-    await requireAdmin()
-    return null
-  } catch (error) {
-    if (error instanceof AuthError) return NOT_ADMIN
-    throw error
-  }
 }
 
 /** One sentence per failure, from the two maps in src/lib/admin/moderation.ts. */
@@ -227,6 +225,7 @@ export async function promoteOwnerAction(
   }
 
   revalidatePath('/admin/owners')
+  revalidatePath('/admin/owners/promote')
   revalidatePath('/dashboard')
   return {
     ok: true,
@@ -235,4 +234,75 @@ export async function promoteOwnerAction(
         ? `Promoted. ${result.revokedGrants} staff ${result.revokedGrants === 1 ? 'grant was' : 'grants were'} revoked.`
         : 'Promoted. They can add branches and courts now.',
   }
+}
+
+/**
+ * A per-owner fee override, from the Owners directory.
+ *
+ * `platform_fee_value` is dual-unit — basis points under 'percentage',
+ * centavos under 'flat' — exactly like default_platform_fee_value on
+ * platform_settings, so this reads ONLY the field matching the submitted
+ * choice, never falling back to the other unit's field when the first is
+ * empty. 'inherit' is a third, explicit state distinct from an empty field:
+ * it clears both columns together, which is what profiles_fee_override_pair
+ * requires (both null or both set). processorFeeBearer is independently
+ * nullable, so it gets its own 'inherit' option and an owner can override the
+ * bearer without overriding the fee, or vice versa.
+ */
+export async function updateOwnerFeeOverrideAction(
+  _prevState: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
+  const refusal = await refuseUnlessAdmin()
+  if (refusal) return { error: refusal }
+
+  const ownerId = idFrom(formData, 'ownerId')
+  if (!ownerId) return { error: BAD_TARGET }
+
+  const choice = String(formData.get('feeChoice') ?? '')
+  let feeMode: FeeMode | null = null
+  let feeValue: number | null = null
+
+  if (choice === 'percentage') {
+    feeMode = 'percentage'
+    feeValue = parsePercentToBps(String(formData.get('feePercent') ?? ''))
+    if (feeValue === null) {
+      // Same parser, same message, as /admin/settings' identical field — the
+      // two forms disagreed on the "with at most two decimals" clause even
+      // though parsePercentToBps enforces it identically for both.
+      return { error: 'Enter a fee percentage above 0 and no more than 100, with at most two decimals.' }
+    }
+  } else if (choice === 'flat') {
+    feeMode = 'flat'
+    feeValue = parsePesosToCentavos(String(formData.get('feePesos') ?? ''))
+    if (feeValue === null) {
+      return { error: 'Enter a flat fee above ₱0, with at most two decimals.' }
+    }
+  } else if (choice !== 'inherit') {
+    return { error: BAD_TARGET }
+  }
+
+  const bearerRaw = String(formData.get('processorFeeBearer') ?? 'inherit')
+  const bearers = ['player', 'owner', 'platform']
+  if (bearerRaw !== 'inherit' && !bearers.includes(bearerRaw)) return { error: BAD_TARGET }
+  const processorFeeBearer = bearerRaw === 'inherit' ? null : (bearerRaw as ProcessorFeeBearer)
+
+  const result = await updateOwnerFeeOverride(ownerId, { feeMode, feeValue, processorFeeBearer })
+  if (!result.ok) {
+    return {
+      error:
+        result.reason === 'no_such_owner'
+          ? 'That account is no longer an owner. Reload the page.'
+          : result.reason === 'flat_fee_exceeds_cheapest_rate'
+            ? // feeValue is only null on the 'inherit' branch above, which can
+              // never produce this reason (updateOwnerFeeOverride only checks
+              // it for a non-null flat feeValue) — the `?? 0` is unreachable,
+              // not a real fallback.
+              `A flat fee of ${formatPeso(feeValue ?? 0)} is more than the cheapest rate at this owner's own courts (${formatPeso(result.cheapestRateCentavos)}). That booking would pay the owner nothing.`
+            : 'That fee is out of range.',
+    }
+  }
+
+  revalidatePath('/admin/owners')
+  return { ok: true, message: 'Saved. New bookings for this owner use these terms.' }
 }

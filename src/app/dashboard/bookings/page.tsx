@@ -4,8 +4,18 @@ import { requireDashboardPage } from '@/lib/auth/page-guards'
 import { branchIdsWith } from '@/lib/staff/access'
 import { BlockForm } from '@/components/dashboard/block-form'
 import { UnblockButton } from '@/components/dashboard/unblock-button'
-import { getOwnerBookings, getScheduleCourts } from '@/lib/owner/queries'
-import { isValidCalendarDate, manilaToday, shiftDay } from '@/lib/date-manila'
+import { MonthCalendar } from '@/components/dashboard/month-calendar'
+import { DayBookingsDialog, type DayDialogRow } from '@/components/dashboard/day-bookings-dialog'
+import { getOwnerBookings, getOwnerMonthCalendar, getScheduleCourts } from '@/lib/owner/queries'
+import {
+  isValidCalendarDate,
+  isValidCalendarMonth,
+  manilaMonth,
+  manilaToday,
+  manilaWeekday,
+  shiftDay,
+  shiftMonth,
+} from '@/lib/date-manila'
 import { formatDateLabel, formatHourRange, formatPeso } from '@/lib/format'
 
 const FOCUS_RING =
@@ -17,7 +27,25 @@ const EMPTY_PANEL =
 const NAV_LINK =
   `inline-flex h-[var(--btn-h-sm)] items-center rounded-[var(--btn-radius)] border border-[var(--hairline)] px-3 text-[13px] font-semibold text-[var(--ink)] hover:border-[var(--court)] ${FOCUS_RING}`
 
+const TABS = ['schedule', 'calendar'] as const
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * `August 2026` from a `YYYY-MM` string. Local to this page for the same
+ * reason the earnings page (src/app/dashboard/earnings/page.tsx) keeps its
+ * own copy rather than a shared helper: parses through `Date.UTC` and
+ * formats with `timeZone: 'UTC'` so the label reflects the string's own
+ * year/month, not a day shifted by the runtime's local timezone.
+ */
+function formatMonthLabel(month: string): string {
+  const [year, monthNumber] = month.split('-').map(Number)
+  return new Date(Date.UTC(year, monthNumber - 1, 1)).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
 
 /**
  * `getOwnerBookings` now filters to SCHEDULE_ROW (`confirmed` | `completed` |
@@ -37,10 +65,15 @@ function humanizeStatus(status: string): string {
 export default async function OwnerBookingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ day?: string; branch?: string }>
+  searchParams: Promise<{ day?: string; branch?: string; tab?: string; month?: string }>
 }) {
   const access = await requireDashboardPage('/dashboard/bookings')
-  const { day: rawDay, branch: rawBranch } = await searchParams
+  const { day: rawDay, branch: rawBranch, tab: rawTab, month: rawMonth } = await searchParams
+
+  // An unknown or absent `?tab=` falls back to the Schedule tab, the same
+  // fallback-on-invalid-input shape the `?day=` and `?branch=` params below
+  // already use.
+  const tab = rawTab === 'calendar' ? 'calendar' : 'schedule'
 
   // Two independent scopes govern this page: view_bookings for the day's
   // table (and the branch filter that narrows it), block_slots for the block
@@ -96,6 +129,62 @@ export default async function OwnerBookingsPage({
   // links — an invalid, foreign, or absent `branch` param is dropped.
   const branchQuery = branchId ? `&branch=${branchId}` : ''
 
+  // The calendar tab's own month, independently resolved from `?month=` with
+  // the same fallback-on-invalid shape `day` above uses for `?day=`. Resolved
+  // unconditionally (pure string/date math, no I/O) so the tab strip and
+  // month nav below can reference it either way, but the DB call itself runs
+  // only for the calendar tab — a day-scoped Schedule-tab render must not
+  // also pay for a whole month's aggregation it never displays.
+  const month = isValidCalendarMonth(rawMonth ?? '') ? rawMonth! : manilaMonth()
+  const calendarDays =
+    tab === 'calendar'
+      ? await getOwnerMonthCalendar(scheduleBranchIds, earningsBranchIds, month, branchId)
+      : []
+
+  // Whether the calendar grid may print money at all: only when EVERY branch
+  // currently in view (the single filtered branch, or the full
+  // scheduleBranchIds scope when unfiltered) is also in earningsBranchIds.
+  // getOwnerMonthCalendar already zeroes gross/net for an out-of-scope
+  // branch, so without this a day cell would show a real, non-zero total for
+  // an in-scope branch sitting right next to a silently-redacted ₱0 for one
+  // that isn't — a day that "earned nothing" and a day whose earnings this
+  // viewer can't see must never render identically.
+  const showEarnings = (branchId ? [branchId] : scheduleBranchIds).every((id) =>
+    earningsBranchIds.includes(id),
+  )
+
+  // The day-bookings dialog reuses the exact `getOwnerBookings` call the
+  // Schedule tab already makes for its own table — no new query, no new
+  // authorization surface. `?day=` keeps one meaning, "the day in focus": on
+  // Schedule it picks the table's day, on Calendar the same parameter opens
+  // this modal for that day. Queried only for the calendar tab, and only when
+  // there is a scope to query — same reasoning as `calendarDays`/`rows`
+  // above, so a Schedule-tab render or an empty-scope session never pays for
+  // a fetch whose result it can't display.
+  const dialogDay = rawDay && isValidCalendarDate(rawDay) ? rawDay : undefined
+  const dialogRows: DayDialogRow[] =
+    tab === 'calendar' && dialogDay && scheduleBranchIds.length > 0
+      ? (await getOwnerBookings(scheduleBranchIds, { day: dialogDay, branchId })).map((row) => {
+          // Redacted HERE, before this array ever becomes a prop on the
+          // Client Component below — DayBookingsDialog is 'use client', so
+          // anything passed to it is serialized into the page's RSC flight
+          // payload regardless of what it renders. Deciding "hide this" only
+          // at render time (as an earlier version of this fix did, mirroring
+          // the Schedule tab's own per-row expression) leaves the real
+          // centavos sitting in that payload for a view_bookings-only
+          // session — the Schedule tab never has this problem because it's a
+          // Server Component, where a value declined at render truly never
+          // left the server. `null` (not a real 0) is what the dialog
+          // renders as '—'; see DayDialogRow's doc comment.
+          const showMoney = !row.isBlock && earningsBranchIds.includes(row.branchId)
+          return {
+            ...row,
+            totalChargedCentavos: showMoney ? row.totalChargedCentavos : null,
+            ownerNetCentavos: showMoney ? row.ownerNetCentavos : null,
+          }
+        })
+      : []
+
   return (
     <>
       <header className="mb-8">
@@ -104,6 +193,111 @@ export default async function OwnerBookingsPage({
         </h1>
       </header>
 
+      {/* Plain links with aria-current, not role="tab"/aria-selected: these
+          navigate to a new URL (?tab=) rather than toggling a panel in place,
+          matching the precedent at src/app/dashboard/listings/[branchId]/
+          page.tsx. Only ?branch= is preserved across a tab switch — ?day=
+          and ?month= are each tab-local state. */}
+      <nav aria-label="Bookings view" className="mb-6 flex gap-7 border-b border-[var(--hairline)]">
+        {TABS.map((t) => {
+          const active = tab === t
+          return (
+            <Link
+              key={t}
+              href={`/dashboard/bookings?tab=${t}${branchQuery}`}
+              aria-current={active ? 'page' : undefined}
+              className={`font-display -mb-px border-b-2 pb-3 text-[14.5px] font-semibold whitespace-nowrap ${FOCUS_RING} ${
+                active
+                  ? 'border-[var(--ink)] text-[var(--ink)]'
+                  : 'border-transparent text-[var(--ink-soft)] hover:text-[var(--ink)]'
+              }`}
+            >
+              {t === 'schedule' ? 'Schedule' : 'Calendar'}
+            </Link>
+          )
+        })}
+      </nav>
+
+      {tab === 'calendar' && (
+        <>
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Link href={`/dashboard/bookings?tab=calendar&month=${shiftMonth(month, -1)}${branchQuery}`} className={NAV_LINK}>
+                ← Prev
+              </Link>
+              <span className="font-display text-[15px] font-bold whitespace-nowrap text-[var(--ink)]">
+                {formatMonthLabel(month)}
+              </span>
+              <Link href={`/dashboard/bookings?tab=calendar&month=${shiftMonth(month, 1)}${branchQuery}`} className={NAV_LINK}>
+                Next →
+              </Link>
+            </div>
+
+            <form
+              method="get"
+              action="/dashboard/bookings"
+              aria-label="Filter calendar by branch"
+              className="flex items-center gap-2"
+            >
+              {/* Mirrors the Schedule tab's own filter form below — same
+                  markup, same option list (`branches`, already scoped to
+                  scheduleBranchIds) — but preserves this tab's own state
+                  (`tab`+`month`) instead of `day`, so submitting it keeps you
+                  on the calendar, in the month you were looking at, rather
+                  than bouncing back to Schedule. */}
+              <input type="hidden" name="tab" defaultValue="calendar" />
+              <input type="hidden" name="month" defaultValue={month} />
+              <select
+                name="branch"
+                aria-label="Branch"
+                defaultValue={branchId ?? ''}
+                className={`h-[var(--btn-h-sm)] rounded-[var(--btn-radius)] border border-[var(--hairline)] bg-[var(--panel)] px-3 text-[13px] text-[var(--ink)] ${FOCUS_RING}`}
+              >
+                <option value="">All branches</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                className={`inline-flex h-[var(--btn-h-sm)] items-center rounded-[var(--btn-radius)] border border-[var(--hairline)] px-3.5 text-[13px] font-semibold text-[var(--ink)] hover:border-[var(--court)] ${FOCUS_RING}`}
+              >
+                Filter
+              </button>
+            </form>
+          </div>
+
+          {scheduleBranchIds.length === 0 ? (
+            // Same empty scope as the Schedule tab's own guard above — an
+            // owner/staff session with no view_bookings branches has nothing
+            // for a month calendar to show either.
+            <p className={EMPTY_PANEL}>You have no branches to show a calendar for yet.</p>
+          ) : (
+            <MonthCalendar
+              days={calendarDays}
+              month={month}
+              branchId={branchId}
+              today={today}
+              selectedDay={rawDay && isValidCalendarDate(rawDay) ? rawDay : undefined}
+              weekdayOfFirst={manilaWeekday(`${month}-01`)}
+              showEarnings={showEarnings}
+            />
+          )}
+
+          {dialogDay && (
+            <DayBookingsDialog
+              day={dialogDay}
+              rows={dialogRows}
+              closeHref={`/dashboard/bookings?tab=calendar&month=${month}${branchQuery}`}
+            />
+          )}
+        </>
+      )}
+
+      {tab === 'schedule' && (
+        <>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Link href={`/dashboard/bookings?day=${shiftDay(day, -1)}${branchQuery}`} className={NAV_LINK}>
@@ -254,6 +448,8 @@ export default async function OwnerBookingsPage({
         </div>
       ) : (
         <p className={EMPTY_PANEL}>No bookings or blocks on this day.</p>
+      )}
+        </>
       )}
     </>
   )

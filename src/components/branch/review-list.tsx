@@ -1,9 +1,7 @@
 import { Rating } from '@/components/ui/rating'
+import { Stars } from '@/components/ui/stars'
 import type { BranchReview } from '@/lib/branches/queries'
 import { formatDateLabel } from '@/lib/format'
-
-const FILLED_STAR = '●'
-const EMPTY_STAR = '○'
 
 /**
  * Ported from design/mockups/branch-page.html's `.review` row (one row only
@@ -61,12 +59,8 @@ export function ReviewList({
                   <span className="text-[13.5px] font-semibold text-[var(--ink)]">
                     {review.authorName ?? 'Player'}
                   </span>
-                  <span
-                    aria-label={`${review.rating} out of 5`}
-                    className="font-mono text-[11px] tracking-[.1em] text-[var(--court)]"
-                  >
-                    {FILLED_STAR.repeat(review.rating)}
-                    {EMPTY_STAR.repeat(Math.max(5 - review.rating, 0))}
+                  <span role="img" aria-label={`${review.rating} out of 5`}>
+                    <Stars value={review.rating} size={12} />
                   </span>
                   <span className="text-xs text-[var(--ink-soft)]">
                     {formatDateLabel(review.createdAt.slice(0, 10))}

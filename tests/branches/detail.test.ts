@@ -202,10 +202,10 @@ describe('getHomeData', () => {
    * still fails if the "approved AND priced" rule regresses in the query path
    * both `cities` and `searchBranches` share.
    *
-   * The named city is `tacloban` — the sole real city entry left in `CITIES`
-   * after the Metro Manila table was replaced, and the one `getHomeData`
-   * actually counts chips for, so the fixture sits inside a radius the
-   * production query really uses.
+   * The named city is `tacloban` — one of the 14 real city entries in
+   * `CITIES` (alongside the nationwide `philippines` entry), and one that
+   * `getHomeData` actually counts chips for, so the fixture sits inside a
+   * radius the production query really uses.
    */
   it('does not count a branch whose only approved court has no rate band', async () => {
     const tacloban = CITIES.find((c) => c.slug === 'tacloban')!

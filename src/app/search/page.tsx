@@ -8,6 +8,8 @@ import { ResultsGrid } from '@/components/search/results-grid'
 import { searchBranches } from '@/lib/branches/queries'
 import { cityBySlug } from '@/lib/geo/cities'
 import { parseSearchParams } from '@/lib/search/params'
+import { getOptionalUser } from '@/lib/auth/guards'
+import { getPlayerCitySlug } from '@/lib/profile/queries'
 
 /**
  * Ported from design/mockups/search-results.html, including its `.map-hero`:
@@ -31,7 +33,9 @@ import { parseSearchParams } from '@/lib/search/params'
 export default async function SearchPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const parsed = await props.searchParams.then(parseSearchParams)
+  const user = await getOptionalUser()
+  const playerCitySlug = user ? await getPlayerCitySlug(user.id) : null
+  const parsed = parseSearchParams(await props.searchParams, playerCitySlug)
   const results = await searchBranches(parsed.filters)
 
   const count = `${results.length} ${results.length === 1 ? 'court' : 'courts'}`

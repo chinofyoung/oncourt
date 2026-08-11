@@ -8,7 +8,8 @@ import {
   FOCUS_RING,
   LABEL,
 } from '../../form-ui'
-import { PESOS_TO_CENTAVOS, WEEKDAY_LABELS, type OperatingHoursDay, type RateBand } from '@/lib/listings/schedule'
+import { WEEKDAY_LABELS, type OperatingHoursDay, type RateBand } from '@/lib/listings/schedule'
+import { PESOS_TO_CENTAVOS } from '@/lib/money/units'
 import { formatHour } from '@/lib/format'
 import {
   COURT_ENVIRONMENT_LABELS,
