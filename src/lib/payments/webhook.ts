@@ -8,6 +8,8 @@ import {
   PG_UNIQUE_VIOLATION,
   sqlStateOf,
 } from '@/lib/db/sql-state'
+import { enqueueEmail } from '@/lib/email/outbox'
+import type { BookingEmailFacts } from '@/lib/email/payload'
 import { reconcileSession } from '@/lib/payments/fees'
 import { bearerFromSnapshot } from '@/lib/payments/queries'
 import type { PaidEvent } from '@/lib/payments/provider'
@@ -38,9 +40,16 @@ function sanitizeForJsonb(rawBody: string): string {
 /**
  * Every terminal state this handler can reach. Returned to PayMongo in the
  * 200 body (its caller is already signature-authenticated) and, more
- * importantly, the seam the confirmation-email slice will branch on — nothing
- * is sent from inside the transaction, so a failing email can never break a
- * confirmed booking.
+ * importantly, the seam the confirmation-email slice branches on: nothing is
+ * SENT from inside the transaction, so a failing email can never break a
+ * confirmed booking. That rule is about the SEND, not the ENQUEUE — an INSERT
+ * into email_outbox (see the two enqueueEmail calls inside the
+ * CONFIRMING_OUTCOMES branch below) is a local-table write, no different in
+ * kind from the payments/bookings writes sitting right next to it, and it
+ * belongs inside this transaction precisely so "booking confirmed" and
+ * "receipt owed" commit or fail together. The actual network call to Resend
+ * happens later, entirely outside this transaction, in the drain worker
+ * (src/lib/email/drain.ts) — that is the part that must never run here.
  */
 export type WebhookOutcome =
   | 'confirmed'
@@ -280,6 +289,73 @@ export async function handlePaidEvent(event: PaidEvent, rawBody: string): Promis
           if (confirmed.rows.length === 0) {
             throw new Error(`Booking ${bookingId} moved under a locked confirm`)
           }
+
+          // Two receipts, one query, ENQUEUED (not sent — see this
+          // function's doc comment above) inside this same transaction. Read
+          // AFTER the confirm UPDATE so total_charged_centavos and the rest
+          // reflect what THIS event just reconciled, not the pre-confirm
+          // quote.
+          const facts = await tx.execute(sql`
+            select
+              to_char(bk.starts_at at time zone 'Asia/Manila', 'YYYY-MM-DD') as booked_on,
+              extract(hour from (bk.starts_at at time zone 'Asia/Manila'))::int as start_hour,
+              case
+                when (bk.ends_at at time zone 'Asia/Manila')
+                     = date_trunc('day', bk.ends_at at time zone 'Asia/Manila')
+                  then 24
+                else extract(hour from (bk.ends_at at time zone 'Asia/Manila'))::int
+              end as end_hour,
+              bk.total_charged_centavos,
+              br.name as branch_name, c.name as court_name,
+              player.email as player_email, player.full_name as player_name,
+              owner.email as owner_email, owner.full_name as owner_name
+            from bookings bk
+            join courts c on c.id = bk.court_id
+            join branches br on br.id = bk.branch_id
+            join profiles player on player.id = bk.player_id
+            join profiles owner on owner.id = br.owner_id
+            where bk.id = ${bookingId}::uuid
+          `)
+          // Every join above is an inner join on a `not null` FK (bookings.
+          // court_id/branch_id/player_id, branches.owner_id) into `profiles`,
+          // whose own `email` column is `not null` — and the booking just
+          // came back from the confirm UPDATE above, so this row is
+          // structurally guaranteed to exist today. Guarded explicitly anyway
+          // rather than trusting that invariant silently: if it ever breaks,
+          // the alternative is a bare TypeError on `row.player_email` a few
+          // lines down, inside a transaction that has ALREADY confirmed the
+          // booking — which would roll back a confirmed booking, rethrow,
+          // return 500, and have PayMongo retry a deterministically failing
+          // request forever with the money already taken. A named error here
+          // is the same failure, but diagnosable.
+          if (facts.rows.length === 0) {
+            throw new Error(`Booking ${bookingId} confirmed but its email facts query returned no row`)
+          }
+          const row = facts.rows[0]
+          const bookingFacts: BookingEmailFacts = {
+            playerName: row.player_name as string | null,
+            branchName: row.branch_name as string,
+            courtName: row.court_name as string,
+            bookedOn: row.booked_on as string,
+            startHour: Number(row.start_hour),
+            endHour: Number(row.end_hour),
+            totalChargedCentavos: Number(row.total_charged_centavos),
+            bookingId,
+          }
+          await enqueueEmail(tx, {
+            payload: { kind: 'booking_confirmed', booking: bookingFacts },
+            recipient: row.player_email as string,
+            bookingId,
+          })
+          await enqueueEmail(tx, {
+            payload: {
+              kind: 'booking_new',
+              booking: bookingFacts,
+              ownerName: row.owner_name as string | null,
+            },
+            recipient: row.owner_email as string,
+            bookingId,
+          })
         }
 
         return outcome

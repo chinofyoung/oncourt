@@ -1,9 +1,11 @@
-import { pgTable, foreignKey, unique, check, uuid, text, integer, timestamp, index, boolean, jsonb, date, smallint, primaryKey, pgEnum } from "drizzle-orm/pg-core"
+import { pgTable, foreignKey, unique, check, uuid, text, integer, timestamp, index, boolean, jsonb, date, uniqueIndex, smallint, primaryKey, pgEnum } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 export const bookingStatus = pgEnum("booking_status", ['pending_payment', 'confirmed', 'completed', 'expired', 'refunded_manual', 'blocked'])
 export const courtEnvironment = pgEnum("court_environment", ['indoor', 'outdoor'])
 export const courtStatus = pgEnum("court_status", ['pending', 'approved', 'rejected', 'suspended'])
+export const emailKind = pgEnum("email_kind", ['booking_confirmed', 'booking_new', 'booking_reminder', 'court_moderated', 'refund_recorded'])
+export const emailStatus = pgEnum("email_status", ['pending', 'sent', 'failed'])
 export const paymentStatus = pgEnum("payment_status", ['pending', 'paid', 'failed'])
 export const payoutLineKind = pgEnum("payout_line_kind", ['payment', 'clawback'])
 export const payoutStatus = pgEnum("payout_status", ['pending', 'paid'])
@@ -309,6 +311,40 @@ export const platformSettings = pgTable("platform_settings", {
 	check("platform_settings_hold_positive", sql`hold_duration_minutes > 0`),
 	check("platform_settings_percentage_ceiling", sql`(default_platform_fee_mode IS DISTINCT FROM 'percentage'::platform_fee_mode) OR (default_platform_fee_value <= 10000)`),
 	check("platform_settings_singleton", sql`CHECK (id)`),
+]);
+
+export const emailOutbox = pgTable("email_outbox", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	kind: emailKind().notNull(),
+	recipient: text().notNull(),
+	payload: jsonb().notNull(),
+	bookingId: uuid("booking_id"),
+	courtId: uuid("court_id"),
+	status: emailStatus().default('pending').notNull(),
+	attempts: integer().default(0).notNull(),
+	nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastError: text("last_error"),
+	providerMessageId: text("provider_message_id"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	sentAt: timestamp("sent_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("email_outbox_booking_id_idx").using("btree", table.bookingId.asc().nullsLast().op("uuid_ops")),
+	uniqueIndex("email_outbox_booking_kind_idx").using("btree", table.kind.asc().nullsLast().op("uuid_ops"), table.bookingId.asc().nullsLast().op("uuid_ops")).where(sql`(booking_id IS NOT NULL)`),
+	index("email_outbox_court_id_idx").using("btree", table.courtId.asc().nullsLast().op("uuid_ops")),
+	index("email_outbox_due_idx").using("btree", table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'pending'::email_status)`),
+	index("email_outbox_failed_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = 'failed'::email_status)`),
+	foreignKey({
+			columns: [table.bookingId],
+			foreignColumns: [bookings.id],
+			name: "email_outbox_booking_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.courtId],
+			foreignColumns: [courts.id],
+			name: "email_outbox_court_id_fkey"
+		}),
+	check("email_outbox_attempts_check", sql`attempts >= 0`),
+	check("email_outbox_sent_has_timestamp", sql`(status = 'sent'::email_status) = (sent_at IS NOT NULL)`),
 ]);
 
 export const reviews = pgTable("reviews", {

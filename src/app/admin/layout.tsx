@@ -5,6 +5,7 @@ import { signOutAction } from '@/app/auth/sign-out/actions'
 import { requireAdminPage } from '@/lib/auth/page-guards'
 import { getPendingCourtCount } from '@/lib/admin/queries'
 import { getFlaggedRefundCount } from '@/lib/refunds/queries'
+import { getFailedEmailCount } from '@/lib/email/outbox'
 
 // Global Constraints mandate a branded focus-visible ring on every
 // interactive element. Declared locally, not imported from the listings
@@ -23,17 +24,19 @@ const FOCUS_RING =
  * Renders its own chrome rather than <Nav>, exactly like the dashboard shell,
  * so this sign-out form is the only one reachable from inside /admin/*.
  *
- * Five nav items, not the mockup's six: Users and Bookings remain later
- * slices (the spec's Out of scope), and an item pointing at a 404 is worse
- * than no item. Settings joined Approvals and Owners once /admin/settings
- * shipped, Payouts joined once /admin/payouts shipped, and Refunds joined once
- * /admin/refunds shipped.
+ * Six nav items, not the mockup's six-plus: Users and Bookings remain the
+ * only later slices (the spec's Out of scope), and an item pointing at a 404
+ * is worse than no item. Settings joined Approvals and Owners once
+ * /admin/settings shipped, Payouts joined once /admin/payouts shipped,
+ * Refunds joined once /admin/refunds shipped, and Emails joined once
+ * /admin/emails shipped.
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAdminPage('/admin')
-  const [pending, flaggedRefunds] = await Promise.all([
+  const [pending, flaggedRefunds, failedEmails] = await Promise.all([
     getPendingCourtCount(),
     getFlaggedRefundCount(),
+    getFailedEmailCount(),
   ])
 
   const items = [
@@ -43,6 +46,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // A flagged payment is money sitting in the wrong place — visible from
     // every admin page, not only when someone thinks to look for it.
     { href: '/admin/refunds', label: 'Refunds', badge: flaggedRefunds },
+    // A failed email is a player or owner who never got a receipt, alert, or
+    // reminder — the same "visible without having to look" reasoning as
+    // Refunds above.
+    { href: '/admin/emails', label: 'Emails', badge: failedEmails },
     { href: '/admin/settings', label: 'Settings', badge: 0 },
   ]
 

@@ -18,6 +18,19 @@ import type { ProcessorFeeBearer } from '@/lib/payments/fees'
 // array never leaks ids across files.
 const createdUserIds: string[] = []
 
+// Tracks every email_outbox id this test file's seedOutboxRow() calls have
+// created during the current run, so teardownFixtures() can delete exactly
+// what this run created and nothing else. This array is the entire
+// selection mechanism for those rows, the same way createdUserIds is above
+// — and it exists for a reason createdUserIds alone cannot cover: an outbox
+// row with both booking_id and court_id null (e.g. a seedOutboxRow() call in
+// a test that isn't exercising the booking/court FKs at all) traces back to
+// no tracked booking and no tracked court, so the predicate-based
+// email_outbox delete below — which finds rows via tracked bookings/courts —
+// can never reach it. Without this array, that row is invisible to teardown
+// and sits in the shared, persistent database forever.
+const createdOutboxIds: string[] = []
+
 export async function seedPlayer(): Promise<string> {
   const email = `player-${crypto.randomUUID()}@example.test`
   const result = await db.execute(sql`
@@ -125,12 +138,55 @@ export async function seedBranchWithCourts(courtCount = 2) {
  * tests/setup.ts does it globally (via a dynamic import, so files that never
  * touch these helpers pay no cost and this module is a no-op for them).
  *
- * FK-safe order: payout_bookings -> payouts -> reviews -> payments ->
- * bookings -> auth.users.
+ * FK-safe order: email_outbox -> payout_bookings -> payouts -> reviews ->
+ * payments -> bookings -> auth.users.
  */
 export async function teardownFixtures(): Promise<void> {
-  if (createdUserIds.length === 0) return
+  // Two independent tracking arrays, two independent early-return guards
+  // would be wrong here: a test file can call seedOutboxRow() without ever
+  // calling seedPlayer()/seedBranchWithCourts() (e.g. a row with no
+  // booking_id and no court_id, exercising nothing but the outbox table
+  // itself), and the original `if (createdUserIds.length === 0) return`
+  // would skip the outbox delete entirely in that case. Bail only when
+  // BOTH arrays are empty.
+  if (createdUserIds.length === 0 && createdOutboxIds.length === 0) return
   const ids = createdUserIds.splice(0, createdUserIds.length)
+  const outboxIds = createdOutboxIds.splice(0, createdOutboxIds.length)
+
+  // Must run before the predicate-based email_outbox delete just below (and
+  // before everything else): this is the ONLY thing that reaches a row whose
+  // booking_id and court_id are BOTH null — such a row traces back to no
+  // tracked booking and no tracked court, so the predicate delete can never
+  // find it. Deleted by id directly, not by predicate, which is why it needs
+  // its own tracked array (createdOutboxIds) rather than reusing `ids`.
+  if (outboxIds.length > 0) {
+    await db.execute(sql`
+      delete from email_outbox where id = any (${sql.param(outboxIds)}::uuid[])
+    `)
+  }
+
+  // Must precede the bookings delete AND the auth.users cascade:
+  // email_outbox.booking_id and .court_id are NO ACTION (RESTRICT), like
+  // payout_bookings, payments and reviews. The booking predicate mirrors the
+  // bookings delete below exactly, so no row can be missed by a row a later
+  // statement removes; the court predicate reaches rows whose booking_id is
+  // null (court_moderated emails).
+  await db.execute(sql`
+    delete from email_outbox
+    where booking_id in (
+        select id from bookings
+        where player_id = any (${sql.param(ids)}::uuid[])
+           or created_by = any (${sql.param(ids)}::uuid[])
+           or branch_id in (
+             select id from branches where owner_id = any (${sql.param(ids)}::uuid[])
+           )
+      )
+       or court_id in (
+        select c.id from courts c
+        join branches b on b.id = c.branch_id
+        where b.owner_id = any (${sql.param(ids)}::uuid[])
+      )
+  `)
 
   // Must precede BOTH the bookings delete and the auth.users delete:
   // payout_bookings.booking_id and .payout_id are NO ACTION (RESTRICT), for
@@ -411,6 +467,51 @@ export async function seedPayoutLine(opts: {
     values (${opts.bookingId}::uuid, ${opts.kind}::payout_line_kind,
             ${opts.payoutId}::uuid, ${opts.netCentavos})
   `)
+}
+
+/**
+ * An `email_outbox` row. Defaults describe a plausible pending receipt; every
+ * field is overridable because the schema and drain tests exist specifically
+ * to push each one over its edge.
+ *
+ * Tracked by id in createdOutboxIds, in addition to whatever booking/court
+ * predicate reach teardownFixtures()'s other delete gives it: a call with
+ * neither bookingId nor courtId set (a bare queue-count fixture, or a
+ * court_moderated row whose court is never seeded) has no predicate that
+ * reaches it at all, and would otherwise leak into this shared, persistent
+ * database forever.
+ */
+export async function seedOutboxRow(opts: {
+  kind: string
+  recipient?: string
+  payload?: object
+  bookingId?: string | null
+  courtId?: string | null
+  status?: 'pending' | 'sent' | 'failed'
+  attempts?: number
+  nextAttemptAt?: Date
+}): Promise<string> {
+  const status = opts.status ?? 'pending'
+  const result = await db.execute(sql`
+    insert into email_outbox (
+      kind, recipient, payload, booking_id, court_id,
+      status, attempts, next_attempt_at, sent_at
+    ) values (
+      ${opts.kind}::email_kind,
+      ${opts.recipient ?? `player-${crypto.randomUUID()}@example.test`},
+      ${JSON.stringify(opts.payload ?? { placeholder: true })}::jsonb,
+      ${opts.bookingId ?? null}::uuid,
+      ${opts.courtId ?? null}::uuid,
+      ${status}::email_status,
+      ${opts.attempts ?? 0},
+      ${(opts.nextAttemptAt ?? new Date()).toISOString()}::timestamptz,
+      ${status === 'sent' ? new Date().toISOString() : null}::timestamptz
+    )
+    returning id
+  `)
+  const id = result.rows[0].id as string
+  createdOutboxIds.push(id)
+  return id
 }
 
 /**

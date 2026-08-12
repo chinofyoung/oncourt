@@ -103,6 +103,33 @@ async function readBooking(bookingId: string) {
   }
 }
 
+async function readOutboxRows(
+  bookingId: string,
+): Promise<{ kind: string; recipient: string; payload: Record<string, unknown> }[]> {
+  const result = await db.execute(sql`
+    select kind::text as kind, recipient, payload
+    from email_outbox where booking_id = ${bookingId}::uuid
+    order by kind
+  `)
+  return result.rows.map((row) => ({
+    kind: row.kind as string,
+    recipient: row.recipient as string,
+    payload: row.payload as Record<string, unknown>,
+  }))
+}
+
+async function profileEmail(id: string): Promise<string> {
+  const result = await db.execute(sql`select email from profiles where id = ${id}::uuid`)
+  return result.rows[0].email as string
+}
+
+async function branchOwnerEmail(branchId: string): Promise<string> {
+  const result = await db.execute(sql`
+    select p.email from branches b join profiles p on p.id = b.owner_id where b.id = ${branchId}::uuid
+  `)
+  return result.rows[0].email as string
+}
+
 async function readPayments(bookingId: string) {
   const result = await db.execute(sql`
     select provider_payment_id, payment_method, amount_centavos,
@@ -534,6 +561,53 @@ test('a valid signature over an empty or non-JSON body returns 200 and writes no
   // — answering 401 would make it retry forever.
   expect(await post('')).toEqual({ status: 200, outcome: 'ignored' })
   expect(await post('not json at all')).toEqual({ status: 200, outcome: 'ignored' })
+})
+
+// ---------- email enqueue ----------
+
+test('a confirming outcome enqueues one booking_confirmed and one booking_new row, correctly addressed and priced', async () => {
+  const { bookingId, sessionId, playerId, branchId } = await seedPaidSession({
+    startHour: 18, date: '2027-01-05',
+  })
+  const playerEmail = await profileEmail(playerId)
+  const ownerEmail = await branchOwnerEmail(branchId)
+
+  expect(
+    await post(paidBody({ sessionId, paymentId: 'pay_' + crypto.randomUUID(), amount: 100_000 })),
+  ).toEqual({ status: 200, outcome: 'confirmed' })
+
+  const rows = await readOutboxRows(bookingId)
+  expect(rows.map((r) => r.kind)).toEqual(['booking_confirmed', 'booking_new'])
+
+  // The receipt: goes to the PLAYER, and its facts are the real Manila
+  // date/hours and the reconciled total — not just any non-empty payload.
+  const confirmedRow = rows.find((r) => r.kind === 'booking_confirmed')!
+  expect(confirmedRow.recipient).toBe(playerEmail)
+  expect(confirmedRow.payload).toMatchObject({
+    booking: {
+      bookedOn: '2027-01-05',
+      startHour: 18,
+      endHour: 19,
+      totalChargedCentavos: 100_000,
+    },
+  })
+
+  // The owner notification: goes to the OWNER, not the player.
+  const newRow = rows.find((r) => r.kind === 'booking_new')!
+  expect(newRow.recipient).toBe(ownerEmail)
+  expect(newRow.payload).toMatchObject({
+    booking: { bookedOn: '2027-01-05', startHour: 18, endHour: 19, totalChargedCentavos: 100_000 },
+  })
+})
+
+test('a non-confirming outcome enqueues nothing', async () => {
+  const { bookingId, sessionId } = await seedPaidSession({ startHour: 19, date: '2027-01-05' })
+
+  expect(
+    await post(paidBody({ sessionId, paymentId: 'pay_' + crypto.randomUUID(), amount: 99_999 })),
+  ).toEqual({ status: 200, outcome: 'amount_mismatch' })
+
+  expect(await readOutboxRows(bookingId)).toEqual([])
 })
 
 // ---------- review fix regressions ----------

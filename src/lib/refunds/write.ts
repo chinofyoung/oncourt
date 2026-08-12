@@ -1,6 +1,7 @@
 import 'server-only'
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
+import { enqueueEmail } from '@/lib/email/outbox'
 
 export const MAX_REFUND_NOTE = 500
 
@@ -83,13 +84,14 @@ export async function recordPaymentRefund(
         set needs_refund = false, refunded_at = now(),
             refund_note = ${trimmed.length > 0 ? trimmed : null}
         where id = ${paymentId}::uuid and refunded_at is null and status = 'paid'
-        returning booking_id
+        returning booking_id, amount_centavos
       `)
       if (stamped.rows.length === 0) {
         return { ok: false as const, reason: 'already_recorded' as const }
       }
 
       const bookingId = stamped.rows[0].booking_id as string
+      const amountCentavos = Number(stamped.rows[0].amount_centavos)
       const flipped = await tx.execute(sql`
         update bookings
         set status = 'refunded_manual'::booking_status
@@ -104,8 +106,41 @@ export async function recordPaymentRefund(
           )
         returning id
       `)
+      const bookingRefunded = flipped.rows.length > 0
 
-      return { ok: true as const, bookingRefunded: flipped.rows.length > 0 }
+      // Enqueued (not sent) inside this same transaction, only when the
+      // booking has a player: a `blocked` row has none and carries no money,
+      // so there is nobody to email and nothing to say. The inner join on
+      // profiles is safe only because of the `player_id is not null` guard
+      // below it.
+      const facts = await tx.execute(sql`
+        select p.email as player_email, p.full_name as player_name,
+               br.name as branch_name, c.name as court_name,
+               to_char(bk.starts_at at time zone 'Asia/Manila', 'YYYY-MM-DD') as booked_on
+        from bookings bk
+        join courts c on c.id = bk.court_id
+        join branches br on br.id = bk.branch_id
+        join profiles p on p.id = bk.player_id
+        where bk.id = ${bookingId}::uuid and bk.player_id is not null
+      `)
+      if (facts.rows.length > 0) {
+        const row = facts.rows[0]
+        await enqueueEmail(tx, {
+          payload: {
+            kind: 'refund_recorded',
+            playerName: row.player_name as string | null,
+            branchName: row.branch_name as string,
+            courtName: row.court_name as string,
+            bookedOn: row.booked_on as string,
+            amountCentavos,
+            bookingCancelled: bookingRefunded,
+          },
+          recipient: row.player_email as string,
+          bookingId,
+        })
+      }
+
+      return { ok: true as const, bookingRefunded }
     },
     { isolationLevel: 'read committed' },
   )

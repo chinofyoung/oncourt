@@ -2,6 +2,7 @@ import 'server-only'
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { MAX_REJECTION_REASON, type CourtModerationResult } from '@/lib/admin/moderation'
+import { enqueueEmail } from '@/lib/email/outbox'
 import {
   courtScheduleWarning,
   type OperatingHoursDay,
@@ -93,9 +94,42 @@ export async function approveCourt(input: { courtId: string }): Promise<CourtMod
         where id = ${input.courtId}::uuid and status = 'pending'
         returning id
       `)
-      return updated.rows.length > 0
-        ? { ok: true as const }
-        : { ok: false as const, reason: 'stale' as const }
+      if (updated.rows.length === 0) return { ok: false as const, reason: 'stale' as const }
+
+      // Enqueued (not sent) inside this same transaction, so the approval and
+      // the owner's notification of it commit or fail together.
+      const owner = await tx.execute(sql`
+        select o.email as owner_email, o.full_name as owner_name,
+               br.name as branch_name, c.name as court_name
+        from courts c
+        join branches br on br.id = c.branch_id
+        join profiles o on o.id = br.owner_id
+        where c.id = ${input.courtId}::uuid
+      `)
+      // courts.branch_id and branches.owner_id are both `not null` FKs, and
+      // this court just came back from the UPDATE above — so this row is
+      // structurally guaranteed. Guarded anyway: an unguarded `rows[0]` here
+      // would surface as a bare TypeError inside a transaction that already
+      // approved the court, rather than a diagnosable error.
+      if (owner.rows.length === 0) {
+        throw new Error(`Court ${input.courtId} approved but its owner lookup returned no row`)
+      }
+      const ownerRow = owner.rows[0]
+      await enqueueEmail(tx, {
+        payload: {
+          kind: 'court_moderated',
+          ownerName: ownerRow.owner_name as string | null,
+          branchName: ownerRow.branch_name as string,
+          courtName: ownerRow.court_name as string,
+          approved: true,
+          rejectionReason: null,
+        },
+        recipient: ownerRow.owner_email as string,
+        courtId: input.courtId,
+        bookingId: null,
+      })
+
+      return { ok: true as const }
     },
     { isolationLevel: 'read committed' },
   )
@@ -113,15 +147,62 @@ export async function rejectCourt(input: {
   if (reason.length === 0) return { ok: false, reason: 'empty_reason' }
   if (reason.length > MAX_REJECTION_REASON) return { ok: false, reason: 'reason_too_long' }
 
-  const result = await db.execute(sql`
-    update courts set status = 'rejected', rejection_reason = ${reason}
-    where id = ${input.courtId}::uuid and status = 'pending'
-    returning id
-  `)
-  return result.rows.length > 0 ? { ok: true } : { ok: false, reason: 'stale' }
+  // Wrapped in a transaction (unlike before this slice) so the enqueue below
+  // joins the same commit as the UPDATE: the rejection and the owner's
+  // notification of it succeed or fail together.
+  return db.transaction(
+    async (tx) => {
+      const result = await tx.execute(sql`
+        update courts set status = 'rejected', rejection_reason = ${reason}
+        where id = ${input.courtId}::uuid and status = 'pending'
+        returning id
+      `)
+      if (result.rows.length === 0) return { ok: false as const, reason: 'stale' as const }
+
+      const owner = await tx.execute(sql`
+        select o.email as owner_email, o.full_name as owner_name,
+               br.name as branch_name, c.name as court_name
+        from courts c
+        join branches br on br.id = c.branch_id
+        join profiles o on o.id = br.owner_id
+        where c.id = ${input.courtId}::uuid
+      `)
+      // Same structural guarantee as approveCourt's identical lookup, guarded
+      // for the same reason: a diagnosable error, not a bare TypeError inside
+      // a transaction that already rejected the court.
+      if (owner.rows.length === 0) {
+        throw new Error(`Court ${input.courtId} rejected but its owner lookup returned no row`)
+      }
+      const ownerRow = owner.rows[0]
+      // The payload type structurally allows rejectionReason: null with
+      // approved: false, but court-moderated.tsx renders no reason line at
+      // all in that combination — and this function already requires a real,
+      // trimmed reason from its caller above, so it must carry it here rather
+      // than passing null.
+      await enqueueEmail(tx, {
+        payload: {
+          kind: 'court_moderated',
+          ownerName: ownerRow.owner_name as string | null,
+          branchName: ownerRow.branch_name as string,
+          courtName: ownerRow.court_name as string,
+          approved: false,
+          rejectionReason: reason,
+        },
+        recipient: ownerRow.owner_email as string,
+        courtId: input.courtId,
+        bookingId: null,
+      })
+
+      return { ok: true as const }
+    },
+    { isolationLevel: 'read committed' },
+  )
 }
 
 export async function suspendCourt(input: { courtId: string }): Promise<CourtModerationResult> {
+  // Deliberately does not email: an enforcement action an admin normally
+  // pairs with direct contact, and an automated "your court was suspended"
+  // with no explanation would be worse than silence.
   const result = await db.execute(sql`
     update courts set status = 'suspended'
     where id = ${input.courtId}::uuid and status = 'approved'
@@ -131,6 +212,10 @@ export async function suspendCourt(input: { courtId: string }): Promise<CourtMod
 }
 
 export async function unsuspendCourt(input: { courtId: string }): Promise<CourtModerationResult> {
+  // Deliberately does not email, for the same reason suspendCourt above does
+  // not: not one of the two transitions (approve/reject) the product spec's
+  // notification table lists.
+  //
   // Straight back to `approved`, not to `pending`: this reverses an admin's
   // own decision about a court that was already approved once, and routing it
   // through the queue would only ask the admin to re-approve their own undo.
