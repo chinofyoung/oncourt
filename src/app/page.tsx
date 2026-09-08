@@ -119,7 +119,7 @@ export default async function HomePage() {
               aria-label="Search courts"
               className="mt-11 grid grid-cols-[1.25fr_1fr_1fr_auto] items-center gap-2 rounded-[20px] border border-white/[.18] bg-white/[.09] p-2 shadow-[0_24px_48px_rgba(6,20,13,.35)] backdrop-blur-[22px] max-[980px]:grid-cols-2 max-[980px]:gap-1.5"
             >
-              <div className="flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] px-4 transition-colors hover:bg-white/[.07] max-[980px]:col-span-2">
+              <div className="flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] bg-white/[.07] px-4 transition-colors hover:bg-white/[.12] max-[980px]:col-span-2">
                 <label
                   htmlFor="home-search-city"
                   className="font-mono text-[10px] tracking-[.14em] text-white/55 uppercase"
@@ -142,7 +142,7 @@ export default async function HomePage() {
                 </select>
               </div>
 
-              <div className="relative flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] border-l border-white/[.18] px-4 transition-colors hover:bg-white/[.07] max-[980px]:border-l-0 max-[560px]:col-span-2">
+              <div className="relative flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] bg-white/[.07] px-4 transition-colors hover:bg-white/[.12] max-[560px]:col-span-2">
                 <label
                   htmlFor="home-search-date"
                   className="font-mono text-[10px] tracking-[.14em] text-white/55 uppercase"
@@ -159,18 +159,21 @@ export default async function HomePage() {
                 />
               </div>
 
-              {/* One Time field, two selects, spaced EN DASH between them —
-                  branding.md's `7 – 9 AM` convention. The dash is decorative
-                  (`aria-hidden`); the pairing is carried for assistive tech by
-                  the field's own <label> plus an explicit accessible name on
-                  each select. A fifth grid column was deliberately NOT added:
-                  the end select rides inside the existing Time cell, and both
-                  Date and Time go full width below 560px so two selects never
-                  have to share ~150px. `min-w-0` all the way down is what
-                  keeps the pair from forcing the form wider than the viewport
-                  — branding.md's Layout rule says the page never scrolls
-                  sideways. */}
-              <div className="relative flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] border-l border-white/[.18] px-4 transition-colors hover:bg-white/[.07] max-[980px]:border-l-0 max-[560px]:col-span-2">
+              {/* One Time field, two selects, with the word "to" between them
+                  — branding.md's Time-range field entry. Unlike the
+                  `7 – 9 AM` convention (that's for a RENDERED range), a dash
+                  between two live dropdowns reads as a hyphen inside a value
+                  rather than a connector, so this pair spells it out instead.
+                  The word is decorative (`aria-hidden`); the pairing is
+                  carried for assistive tech by the field's own <label> plus
+                  an explicit accessible name on each select. A fifth grid
+                  column was deliberately NOT added: the end select rides
+                  inside the existing Time cell, and both Date and Time go
+                  full width below 560px so two selects never have to share
+                  ~150px. `min-w-0` all the way down is what keeps the pair
+                  from forcing the form wider than the viewport — branding.md's
+                  Layout rule says the page never scrolls sideways. */}
+              <div className="relative flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] bg-white/[.07] px-4 transition-colors hover:bg-white/[.12] max-[560px]:col-span-2">
                 <label
                   htmlFor="home-search-hour"
                   className="font-mono text-[10px] tracking-[.14em] text-white/55 uppercase"
@@ -194,8 +197,8 @@ export default async function HomePage() {
                       </option>
                     ))}
                   </select>
-                  <span aria-hidden className="text-[15.5px] text-white/55">
-                    &ndash;
+                  <span aria-hidden className="text-[13px] text-white/55">
+                    to
                   </span>
                   <select
                     id="home-search-until"

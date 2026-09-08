@@ -1,14 +1,16 @@
 import Link from 'next/link'
 import { Wordmark } from '@/components/site/wordmark'
 import { AccountMenu } from '@/components/site/account-menu'
+import { accountLinks } from '@/components/site/account-links'
 import { getOptionalUser } from '@/lib/auth/guards'
 import { hasAnyStaffGrant } from '@/lib/staff/access'
 
 /**
  * design/branding.md, Nav: floating over heroes (absolute, transparent,
  * white text + glass pill) or solid --surface with a hairline border on
- * utility pages. Right side: the account menu (36px avatar) when signed in,
- * or a "Sign in" link when signed out.
+ * utility pages. Right side, signed in: a role link (the first entry of
+ * `accountLinks()`) beside the 36px avatar / account menu; signed out: a
+ * plain "Sign in" link.
  *
  * Glass surfaces are for use over photos ONLY:
  * rgba(255,255,255,.09) bg + rgba(255,255,255,.18) 1px border + blur(22px).
@@ -31,6 +33,21 @@ export async function Nav({ variant = 'solid' }: { variant?: 'overlay' | 'solid'
   // just true absent concurrency. One indexed lookup on branch_staff
   // (user_id), and only for a signed-in player.
   const isStaff = user?.role === 'player' ? await hasAnyStaffGrant(user.id) : false
+
+  const accountMenuUser = user
+    ? {
+        email: user.email,
+        fullName: user.fullName ?? null,
+        avatarUrl: user.avatarUrl,
+        role: user.role,
+        isStaff,
+      }
+    : null
+  // The nav's one-click shortcut: the first entry of the same ordered list
+  // AccountMenu renders in full, so the two can never disagree about which
+  // destination is "the" role link. Only ever empty if accountLinks() itself
+  // returned nothing, which no role currently does.
+  const roleLink = accountMenuUser ? accountLinks(accountMenuUser)[0] : undefined
 
   return (
     <header
@@ -56,17 +73,29 @@ export async function Nav({ variant = 'solid' }: { variant?: 'overlay' | 'solid'
         </div>
 
         <div className="flex items-center gap-3">
-          {user ? (
-            <AccountMenu
-              user={{
-                email: user.email,
-                fullName: user.fullName ?? null,
-                avatarUrl: user.avatarUrl,
-                role: user.role,
-                isStaff,
-              }}
-              onDark={onDark}
-            />
+          {accountMenuUser ? (
+            <>
+              {roleLink && (
+                // Hidden at <=980px like the center links above — the
+                // dropdown still carries every destination there, so nothing
+                // is lost. No outline-none: Tailwind v4 resolves
+                // --tw-outline-style through one shared custom property, so
+                // pairing it with focus-visible:outline-2 would leave the
+                // ring permanently suppressed even while focused (see
+                // src/app/page.tsx:100-115).
+                <Link
+                  href={roleLink.href}
+                  className={`hidden text-sm font-semibold rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 min-[980px]:inline-block ${
+                    onDark
+                      ? 'text-white/85 hover:text-white focus-visible:outline-[var(--ball)]'
+                      : 'text-[var(--ink-soft)] hover:text-[var(--ink)] focus-visible:outline-[var(--court)]'
+                  }`}
+                >
+                  {roleLink.label}
+                </Link>
+              )}
+              <AccountMenu user={accountMenuUser} onDark={onDark} />
+            </>
           ) : (
             <Link
               href="/login"

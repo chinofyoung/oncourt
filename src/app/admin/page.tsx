@@ -24,11 +24,13 @@ const FOCUS_RING =
 // mean. Only those explicit interactive elements respond to hover/focus,
 // the same reasoning that keeps a page panel un-lifted.
 const CARD = 'overflow-hidden rounded-[20px] bg-[var(--panel)] shadow-[var(--shadow-sm)]'
-// p-6 (max-[560px]:p-5), not the standard entity-card px-5 pt-[18px] pb-5:
-// this body carries substantially more (price line, fact list, forms, link)
-// than a plain title+meta card, and the tighter padding read cramped
-// against that much content — also documented in branding.md.
-const CARD_BODY = 'p-6 max-[560px]:p-5'
+// p-5 (max-[560px]:p-4) as of the 2026-09-08 density pass — a step down
+// from the p-6/p-5 pair this card used before, but still not the standard
+// entity-card px-5 pt-[18px] pb-5: this body carries substantially more
+// (price line, fact list, forms, link) than a plain title+meta card. The
+// shorter cover and smaller title/price type (see below) freed up enough
+// room that p-6 no longer earned its keep — also documented in branding.md.
+const CARD_BODY = 'p-5 max-[560px]:p-4'
 const KICKER = 'font-mono text-[10.5px] tracking-[.12em] text-[var(--ink-soft)] uppercase'
 const EMPTY_PANEL =
   'rounded-[20px] border border-dashed border-[var(--hairline)] bg-[var(--panel)] px-6 py-12 text-center text-[var(--ink-soft)]'
@@ -95,19 +97,25 @@ export default async function AdminApprovalsPage({
           {live ? 'No approved courts yet.' : 'Nothing is waiting for approval. Good.'}
         </p>
       ) : (
-        // Two columns, not one full-width row per court: a cover photo plus
+        // Three columns, not one full-width row per court: a cover photo plus
         // the approval controls made each row noticeably taller than the old
         // text-only card, and this queue is scanned, not read top to bottom —
-        // a grid halves the scrolling for the common case of a handful of
-        // pending courts. Collapses at 980px — branding.md's stack breakpoint,
-        // and the only one this codebase uses for column collapse. An earlier
-        // pass here used 860px on the reasoning that a card needs less room
-        // than a sidebar before it feels cramped; that may well be true, but
+        // a grid cuts the scrolling far more than one column would for the
+        // common case of a handful of pending courts. Stepped up from two
+        // columns to three in the same 2026-09-08 density pass that shrank
+        // the card itself (shorter 16/7 cover, smaller title/price type,
+        // tighter padding) — a narrower card still reads fine once there's
+        // less packed into it. Collapses in two steps, using both of
+        // branding.md's breakpoints and no others: grid-cols-2 at 980px (the
+        // stack breakpoint) and grid-cols-1 at 560px. An earlier pass here
+        // used 860px on the reasoning that a card needs less room than a
+        // sidebar before it feels cramped; that may well be true, but
         // branding.md lists exactly two breakpoints (980/560) and a private
         // third one in a single file is how a design system stops being one.
-        // If 980 really is too early for these cards, change branding.md
-        // first, then every page that follows it.
-        <ul className="grid grid-cols-2 gap-4 max-[980px]:grid-cols-1">
+        // If 980 (or 560) really is wrong for these cards, change branding.md
+        // first, then every page that follows it. Gap stays gap-3, unchanged
+        // from the 2026-09-08 density pass that first set it.
+        <ul className="grid grid-cols-3 gap-3 max-[980px]:grid-cols-2 max-[560px]:grid-cols-1">
           {courts.map((court) => (
             <li key={court.id}>
               <CourtCard court={court} live={live} />
@@ -148,7 +156,12 @@ function CourtCard({ court, live }: { court: AdminCourtRow; live: boolean }) {
 
   return (
     <article className={CARD}>
-      <div className="relative aspect-[16/10] overflow-hidden">
+      {/* aspect-[16/7], not the standard entity-card aspect-[16/10]: this
+          queue is scanned rather than read, and a shorter cover (2026-09-08
+          density pass) buys back height for the price/fact/form content
+          below without losing the photo entirely — see branding.md's
+          "Documented variants" note on this card. */}
+      <div className="relative aspect-[16/7] overflow-hidden">
         {cover ? (
           // The bucket is public and uploads are already sized for display
           // (src/lib/photos.ts's MAX_PHOTO_BYTES gate runs at upload time);
@@ -161,7 +174,9 @@ function CourtCard({ court, live }: { court: AdminCourtRow; live: boolean }) {
           // matches the branch/court cards' placeholder instead of a bare
           // color block. No hover-zoom pairing here (see the card's own note
           // on why it has no hover-lift at all): this is a static fallback
-          // regardless.
+          // regardless. Still 40px against the shorter 16/7 cover — plenty
+          // of room, so the standard fallback size didn't need its own step
+          // down.
           <div className="flex h-full w-full items-center justify-center bg-[var(--band-off)]">
             <span aria-hidden className="font-display text-[40px] font-bold text-[var(--court-deep)]">
               {court.name.charAt(0).toUpperCase()}
@@ -173,7 +188,12 @@ function CourtCard({ court, live }: { court: AdminCourtRow; live: boolean }) {
       <div className={CARD_BODY}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="font-display text-[18px] font-bold tracking-[-0.015em] text-[var(--ink)]">
+            {/* text-[16px]/tracking-[-0.01em], a step down from the standard
+                entity-card text-lg/18px title — the same smaller card-title
+                size used by src/app/bookings/page.tsx and
+                src/app/admin/refunds/page.tsx, part of the 2026-09-08
+                density pass. */}
+            <h2 className="font-display text-[16px] font-bold tracking-[-0.01em] text-[var(--ink)]">
               {court.name} — {court.branchName}
             </h2>
             <p className="mt-[5px] text-[13px] text-[var(--ink-soft)]">
@@ -196,11 +216,14 @@ function CourtCard({ court, live }: { court: AdminCourtRow; live: boolean }) {
 
         {/* The one number an admin actually needs to judge a listing before
             clicking through, so it gets its own line rather than sitting
-            inside the facts dl below — same "money is the headline" treatment
-            branch-card.tsx gives a venue's price-from. */}
-        <p className="font-mono mt-3 text-[15px] font-medium text-[var(--ink)]">{priceLabel}</p>
+            inside the facts dl below — the same "give the price its own
+            line" idea branch-card.tsx applies to a venue's price-from, one
+            size step down (13.5px vs. its 15px) as of the 2026-09-08 density
+            pass, since this card is already denser than a plain browsing
+            card. */}
+        <p className="font-mono mt-2.5 text-[13.5px] font-medium text-[var(--ink)]">{priceLabel}</p>
 
-        <dl className="font-mono mt-3 grid gap-2 text-[12.5px]">
+        <dl className="font-mono mt-2.5 grid gap-1.5 text-[12.5px]">
           {facts.map((fact) => (
             <div key={fact.term} className="grid grid-cols-[84px_1fr] gap-2.5">
               <dt className={KICKER}>{fact.term}</dt>
@@ -210,12 +233,12 @@ function CourtCard({ court, live }: { court: AdminCourtRow; live: boolean }) {
         </dl>
 
         {court.status === 'rejected' && court.rejectionReason && (
-          <p className="mt-3 text-[13px] text-[var(--ink)]">
+          <p className="mt-2.5 text-[13px] text-[var(--ink)]">
             <span className="font-semibold">Last reason:</span> {court.rejectionReason}
           </p>
         )}
 
-        <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-[var(--hairline)] pt-4">
+        <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-[var(--hairline)] pt-3">
           {live ? (
             <StatusToggleForm
               courtId={court.id}

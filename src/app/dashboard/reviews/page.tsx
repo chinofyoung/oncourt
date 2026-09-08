@@ -55,14 +55,32 @@ export default async function ReviewsPage({
 
   // No round trip at all for an owner with no branches: `any('{}')` would
   // return nothing anyway, and skipping it keeps the empty state free.
-  const { reviews, capped } =
+  const { groups } =
     scopeBranchIds.length > 0
       ? await getOwnerReviews(scopeBranchIds, { branchId })
-      : { reviews: [], capped: false }
+      : { groups: [] }
 
-  const filteredBranchName = branchId
-    ? branches.find((branch) => branch.id === branchId)?.name
-    : undefined
+  // getOwnerReviews already seeds one group per branch id it was given, zero
+  // reviews included (see its module doc — the LEFT JOIN happens there, not
+  // here). This page still re-keys by `branches` rather than trusting the
+  // query's own row order as final: `branches` is what the filter dropdown
+  // above iterates (already in name order — loadDashboardAccess orders by
+  // name, and the scope filter preserves that), so walking it here is what
+  // guarantees the rendered groups can never drift out of sync with the
+  // dropdown's order. The `?? {...}` fallback is a defensive backstop, not
+  // the seeding mechanism: every branch id in `branches` was also passed into
+  // getOwnerReviews, so it should always have a group already.
+  const groupByBranchId = new Map(groups.map((group) => [group.branchId, group]))
+  const visibleBranches = branchId ? branches.filter((branch) => branch.id === branchId) : branches
+  const reviewGroups = visibleBranches.map(
+    (branch) =>
+      groupByBranchId.get(branch.id) ?? {
+        branchId: branch.id,
+        branchName: branch.name,
+        reviews: [],
+        capped: false,
+      },
+  )
 
   return (
     <>
@@ -104,64 +122,91 @@ export default async function ReviewsPage({
         </form>
       )}
 
-      {reviews.length === 0 ? (
+      {reviewGroups.length === 0 ? (
+        // Only reachable with zero branches in scope at all (an owner with no
+        // branches yet, per the `!access.isOwner &&` redirect above) — any
+        // in-scope branch, reviewed or not, produces at least one group below.
         <p className={EMPTY_PANEL}>
-          {filteredBranchName
-            ? `No reviews for ${filteredBranchName} yet.`
-            : 'No reviews yet — players can review a court after they’ve played on it.'}
+          No reviews yet — players can review a court after they’ve played on it.
         </p>
       ) : (
-        <>
-          <div className="flex flex-col gap-4">
-            {reviews.map((review) => (
-              <article
-                key={review.id}
-                className="rounded-[20px] bg-[var(--panel)] p-6 shadow-[var(--shadow-sm)]"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-display text-[16px] font-bold tracking-[-0.01em] text-[var(--ink)]">
-                      {review.courtName}
-                    </div>
-                    <div className="mt-0.5 text-[12.5px] text-[var(--ink-soft)]">
-                      {review.branchName} · {review.playerName}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-mono text-[11.5px] text-[var(--ink-soft)]">
-                      {formatDateLabel(review.createdOn)}
-                    </div>
-                    {/* The single-review mark. Uses the Stars primitive rather
-                        than <Rating>, which is the AGGREGATE component
-                        (average + count in parens, renders nothing at zero).
-                        Both single-review surfaces — this one and the player's
-                        own reviews on /bookings — used to hand-roll their own
-                        copy of this markup because no primitive existed. */}
-                    <div
-                      role="img"
-                      className="mt-1.5 flex items-center justify-end"
-                      aria-label={`Rated ${review.rating} out of 5`}
-                    >
-                      <Stars value={review.rating} />
-                    </div>
-                  </div>
-                </div>
-                {/* Null body renders NOTHING — not an empty blockquote, not a
-                    dash. The query already collapses a whitespace-only body to
-                    null, so this one check covers both. */}
-                {review.body && (
-                  <p className="mt-3.5 text-[14.5px] text-[var(--ink)]">{review.body}</p>
-                )}
-              </article>
-            ))}
-          </div>
+        <div className="flex flex-col gap-10">
+          {reviewGroups.map((group) => (
+            <section key={group.branchId}>
+              <div className="mb-4 flex items-baseline justify-between gap-3">
+                <h2 className="font-display text-[19px] font-bold tracking-[-0.01em] text-[var(--ink)]">
+                  {group.branchName}
+                </h2>
+                <span className="font-mono text-[11px] tracking-[.1em] text-[var(--ink-soft)] uppercase">
+                  {group.reviews.length} {group.reviews.length === 1 ? 'review' : 'reviews'}
+                </span>
+              </div>
 
-          {capped && (
-            <p className="mt-5 text-[12.5px] text-[var(--ink-soft)]">
-              Showing the most recent {OWNER_REVIEWS_LIMIT}.
-            </p>
-          )}
-        </>
+              {group.reviews.length === 0 ? (
+                // Only truthful because the cap is now per branch (see
+                // src/lib/owner/reviews.ts's module doc): a global cap could
+                // starve a quiet branch of its own older reviews and this
+                // line would then be lying about it having none at all.
+                <p className={EMPTY_PANEL}>No reviews for {group.branchName} yet.</p>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-4">
+                    {group.reviews.map((review) => (
+                      <article
+                        key={review.id}
+                        className="rounded-[20px] bg-[var(--panel)] p-6 shadow-[var(--shadow-sm)]"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-display text-[16px] font-bold tracking-[-0.01em] text-[var(--ink)]">
+                              {review.courtName}
+                            </div>
+                            {/* Just the player, not `{branchName} · {playerName}`
+                                — under this group's own branch heading, repeating
+                                the branch name on every card would be redundant. */}
+                            <div className="mt-0.5 text-[12.5px] text-[var(--ink-soft)]">
+                              {review.playerName}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-mono text-[11.5px] text-[var(--ink-soft)]">
+                              {formatDateLabel(review.createdOn)}
+                            </div>
+                            {/* The single-review mark. Uses the Stars primitive rather
+                                than <Rating>, which is the AGGREGATE component
+                                (average + count in parens, renders nothing at zero).
+                                Both single-review surfaces — this one and the player's
+                                own reviews on /bookings — used to hand-roll their own
+                                copy of this markup because no primitive existed. */}
+                            <div
+                              role="img"
+                              className="mt-1.5 flex items-center justify-end"
+                              aria-label={`Rated ${review.rating} out of 5`}
+                            >
+                              <Stars value={review.rating} />
+                            </div>
+                          </div>
+                        </div>
+                        {/* Null body renders NOTHING — not an empty blockquote, not a
+                            dash. The query already collapses a whitespace-only body to
+                            null, so this one check covers both. */}
+                        {review.body && (
+                          <p className="mt-3.5 text-[14.5px] text-[var(--ink)]">{review.body}</p>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+
+                  {group.capped && (
+                    <p className="mt-5 text-[12.5px] text-[var(--ink-soft)]">
+                      Showing the most recent {OWNER_REVIEWS_LIMIT} for {group.branchName}.
+                    </p>
+                  )}
+                </>
+              )}
+            </section>
+          ))}
+        </div>
       )}
     </>
   )

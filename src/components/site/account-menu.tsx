@@ -3,15 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { signOutAction } from '@/app/auth/sign-out/actions'
-
-export type AccountMenuUser = {
-  email: string
-  fullName: string | null
-  avatarUrl: string | null
-  role: 'player' | 'owner' | 'admin'
-  /** Holds >= 1 branch_staff row. Only ever true for role 'player' — see <Nav>. */
-  isStaff: boolean
-}
+import { accountLinks, type AccountMenuUser } from '@/components/site/account-links'
 
 // One definition instead of the three identical copies this file carried.
 // Branded focus-visible ring on every interactive element — Global Constraints.
@@ -29,19 +21,11 @@ const FOCUS_RING =
  * role="menu" would promise arrow-key semantics that then have to be built and
  * maintained. It is a disclosure (aria-expanded) over ordinary links.
  *
- * An admin gets the Admin item ONLY, not the owner dashboard link too
- * (2026-08-07 user ruling, reversing an earlier "alongside it" decision):
- * /dashboard's queries do filter on owner_id, so an admin who is also an owner
- * would technically only see their own branches there, but that "technically
- * still correct" case is not the point — the menu is answering "what are you,
- * here", and surfacing /dashboard next to /admin makes it look like an admin
- * is still acting as an owner day to day, which is not the intended framing.
- *
- * Item visibility is role-derived: an owner or admin loses "My bookings" (they
- * can never have one, and /bookings redirects them straight back to
- * /dashboard), and a player holding >= 1 branch_staff grant gains "Venue
- * dashboard" alongside it. `isStaff` is resolved server-side in <Nav> — a
- * client component like this one cannot query the database.
+ * Item list (which destinations, in what order, and the admin/owner/bookings
+ * precedence rules behind them) is not derived here — see `accountLinks()` in
+ * `./account-links`, the single source both this menu and `<Nav>`'s direct
+ * link read from. `isStaff` is resolved server-side in <Nav> — a client
+ * component like this one cannot query the database.
  */
 export function AccountMenu({ user, onDark }: { user: AccountMenuUser; onDark: boolean }) {
   const [open, setOpen] = useState(false)
@@ -72,18 +56,7 @@ export function AccountMenu({ user, onDark }: { user: AccountMenuUser; onDark: b
     }
   }, [open])
 
-  const isOwner = user.role === 'owner'
-  const isAdmin = user.role === 'admin'
-  // Owners and admins can never have bookings, so "My bookings" would always
-  // be empty for them and /bookings redirects both straight back to
-  // /dashboard anyway.
-  const showBookings = !isOwner && !isAdmin
-  // Staff get the same dashboard, under a name that describes what they are
-  // seeing: they do not own the venue, they work at it. Null means no
-  // dashboard item at all — a plain player has no dashboard to go to, an
-  // item pointing somewhere that redirects straight back is worse than none,
-  // and an admin gets the Admin item below instead (see the comment above).
-  const dashboardLabel = isOwner ? 'Owner dashboard' : user.isStaff ? 'Venue dashboard' : null
+  const links = accountLinks(user)
   const label = user.fullName ?? user.email
   const initial = (user.fullName ?? user.email).charAt(0).toUpperCase()
 
@@ -127,35 +100,16 @@ export function AccountMenu({ user, onDark }: { user: AccountMenuUser; onDark: b
             <div className="truncate text-[12.5px] text-[var(--ink-soft)]">{user.email}</div>
           </div>
 
-          {showBookings && (
+          {links.map((link, index) => (
             <Link
-              href="/bookings"
+              key={link.href}
+              href={link.href}
               onClick={() => setOpen(false)}
-              className={`mt-2 block rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium text-[var(--ink)] ${FOCUS_RING} hover:bg-[var(--surface)]`}
+              className={`${index === 0 ? 'mt-2 ' : ''}block rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium text-[var(--ink)] ${FOCUS_RING} hover:bg-[var(--surface)]`}
             >
-              My bookings
+              {link.label}
             </Link>
-          )}
-
-          {dashboardLabel && (
-            <Link
-              href="/dashboard"
-              onClick={() => setOpen(false)}
-              className={`${showBookings ? '' : 'mt-2 '}block rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium text-[var(--ink)] ${FOCUS_RING} hover:bg-[var(--surface)]`}
-            >
-              {dashboardLabel}
-            </Link>
-          )}
-
-          {isAdmin && (
-            <Link
-              href="/admin"
-              onClick={() => setOpen(false)}
-              className={`block rounded-[10px] px-3 py-2.5 text-[13.5px] font-medium text-[var(--ink)] ${FOCUS_RING} hover:bg-[var(--surface)]`}
-            >
-              Admin
-            </Link>
-          )}
+          ))}
 
           {/* A form POST, not an onClick fetch: sign-out is a state change and
               must not be reachable by a GET that a prefetch could fire. */}

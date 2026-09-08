@@ -52,15 +52,15 @@ const COLUMN_INSET =
 // `flex-none` / `max-[980px]:flex-auto` were dropped when the float became a
 // grid: both are flex-item concepts and are inert in a grid container. The
 // per-cell responsive spans live at the call sites instead, matching the home
-// hero. The hover wash is the panel-skin counterpart of the hero's
-// `hover:bg-white/[.07]` — `--surface` on `--panel` is the same barely-there
-// shift on white that white/.07 is on glass.
+// hero. The resting fill is the panel-skin counterpart of the hero's resting
+// `bg-white/[.07]` — `--surface` on `--panel` is the same barely-there shift
+// on white that white/.07 is on glass; hover steps up to `--band-off`, the
+// soft green tint already used elsewhere in the app as a "more present than
+// neutral" state (e.g. the active pill in `side-nav.tsx`) — `--booked` was
+// the other candidate but stays reserved for neutral/disabled tags per its
+// own comment in globals.css, not for an interactive hover.
 const fieldClass =
-  'flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] px-4 transition-colors hover:bg-[var(--surface)] motion-reduce:transition-none'
-// `max-[980px]:border-l-0`, not `max-[560px]`: at ≤980px the grid drops to two
-// columns, so Date becomes the first cell in its row and a left border there
-// would draw a line against nothing. Matches the home hero exactly.
-const dividerClass = 'border-l border-[var(--hairline)] max-[980px]:border-l-0'
+  'flex h-[var(--control-h)] min-w-0 flex-col justify-center rounded-[var(--btn-radius)] bg-[var(--surface)] px-4 transition-colors hover:bg-[var(--band-off)] motion-reduce:transition-none'
 const labelClass = 'font-mono text-[10px] tracking-[.14em] text-[var(--ink-soft)] uppercase'
 /** The label row: the label itself, plus (Where only) the location link. */
 const labelRowClass = 'mb-[3px] flex items-center gap-2'
@@ -201,7 +201,7 @@ export function MapHero(props: {
           </select>
         </div>
 
-        <div className={`${fieldClass} ${dividerClass} max-[560px]:col-span-2`}>
+        <div className={`${fieldClass} max-[560px]:col-span-2`}>
           <div className={labelRowClass}>
             <label className={labelClass} htmlFor="search-date">
               Date
@@ -217,14 +217,17 @@ export function MapHero(props: {
           />
         </div>
 
-        {/* One Time field, two selects, spaced EN DASH — branding.md's
-            `7 – 9 AM` convention. The dash is decorative (`aria-hidden`); each
-            select carries its own accessible name so a screen-reader user
-            isn't handed two controls both called "Time". Unlike the home
-            hero's GET form, this one is a client component, so the end list
-            narrows to hours after the chosen start and goes inert when there
-            is no start to be after. */}
-        <div className={`${fieldClass} ${dividerClass} max-[560px]:col-span-2`}>
+        {/* One Time field, two selects, with the word "to" between them —
+            branding.md's Time-range field entry. Unlike the `7 – 9 AM`
+            convention (that's for a RENDERED range), a dash between two live
+            dropdowns reads as a hyphen inside a value rather than a
+            connector, so this pair spells it out instead. The word is
+            decorative (`aria-hidden`); each select carries its own accessible
+            name so a screen-reader user isn't handed two controls both
+            called "Time". Unlike the home hero's GET form, this one is a
+            client component, so the end list narrows to hours after the
+            chosen start and goes inert when there is no start to be after. */}
+        <div className={`${fieldClass} max-[560px]:col-span-2`}>
           <div className={labelRowClass}>
             <label className={labelClass} htmlFor="search-hour">
               Time
@@ -245,8 +248,8 @@ export function MapHero(props: {
                 </option>
               ))}
             </select>
-            <span aria-hidden className="text-[15.5px] text-[var(--ink-soft)]">
-              &ndash;
+            <span aria-hidden className="text-[13px] text-[var(--ink-soft)]">
+              to
             </span>
             <select
               id="search-until"

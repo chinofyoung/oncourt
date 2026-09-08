@@ -10,11 +10,16 @@ import dynamic from 'next/dynamic'
  * `src/components/search/map-hero.tsx`: dynamic-import with
  * `ssr: false` from a small client module, and render that here instead.
  *
- * The loading fallback matches the flat `--band-off` block this replaces in
- * page.tsx's "Where to find us" section, so there's no layout flash while
- * the client bundle loads.
+ * The loading fallback matches the flat `--band-off` block page.tsx renders
+ * in the map column of the identity/About band whenever coordinates are
+ * missing, so there's no layout flash while the client bundle loads.
+ * `h-full w-full` (not a fixed pixel height) so the fallback fills the same
+ * `h-full max-[980px]:aspect-square` wrapper the real map does — stretched
+ * to match the identity/About column at `>=980px`, square below it (see
+ * branch-map.tsx's comment for the full mechanism) — a fixed-height flash
+ * swapping to a full-height map would itself be a layout jump.
  */
 export const BranchMap = dynamic(() => import('./branch-map').then((m) => m.BranchMap), {
   ssr: false,
-  loading: () => <div className="h-[120px] w-full rounded-[10px] bg-[var(--band-off)]" />,
+  loading: () => <div className="h-full w-full rounded-[10px] bg-[var(--band-off)]" />,
 })
