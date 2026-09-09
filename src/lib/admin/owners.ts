@@ -41,6 +41,9 @@ export type AdminOwnerRow = {
   feeMode: FeeMode | null
   feeValue: number | null
   processorFeeBearer: ProcessorFeeBearer | null
+  /** Which rail this owner's bookings settle through. Never null -- unlike
+   * feeMode/feeValue, there is no "inherit the default" state for this. */
+  paymentMode: 'automated' | 'manual'
 }
 
 /**
@@ -69,7 +72,7 @@ export async function getAdminOwners(): Promise<AdminOwnerRow[]> {
     select p.id, p.email, p.full_name, p.business_name, p.slug, p.role::text as role,
            to_char(p.created_at at time zone 'Asia/Manila', 'YYYY-MM-DD') as joined_on,
            p.platform_fee_mode::text as fee_mode, p.platform_fee_value as fee_value,
-           p.processor_fee_bearer::text as fee_bearer
+           p.processor_fee_bearer::text as fee_bearer, p.payment_mode::text as payment_mode
     from profiles p
     where p.role = 'owner'
        or (p.role = 'admin' and exists (select 1 from branches b where b.owner_id = p.id))
@@ -91,6 +94,7 @@ export async function getAdminOwners(): Promise<AdminOwnerRow[]> {
     // zero-peso fee, so null is preserved explicitly rather than coerced.
     feeValue: row.fee_value === null ? null : Number(row.fee_value),
     processorFeeBearer: (row.fee_bearer as ProcessorFeeBearer | null) ?? null,
+    paymentMode: row.payment_mode as 'automated' | 'manual',
   }))
 
   if (owners.length === 0) return []

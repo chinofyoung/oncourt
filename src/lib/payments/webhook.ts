@@ -71,7 +71,12 @@ export type WebhookOutcome =
 const CONFIRMING_OUTCOMES = new Set<WebhookOutcome>(['confirmed', 'confirmed_after_expiry'])
 
 /**
- * The only writer of `confirmed` in this application.
+ * The only writer of `confirmed` ON THE AUTOMATED RAIL. The manual rail has
+ * its own, approveManualProof() in src/lib/payments/manual.ts, which mirrors
+ * this function's discipline (one transaction, `for update`, slot_elapsed
+ * read in SQL, status-scoped UPDATE, email enqueued inside the transaction).
+ * The two never touch the same booking: bookings.payment_mode is decided at
+ * hold time and never changes.
  *
  * TWO CALLERS, ONE CORE: the webhook route (src/app/api/webhooks/paymongo/
  * route.ts) calls this with a PaidEvent it parsed from a pushed delivery;

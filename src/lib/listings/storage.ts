@@ -5,7 +5,7 @@ import type { PhotoBucket } from '@/lib/photos'
 /**
  * The narrow slice of Supabase Storage this slice uses, behind an interface.
  *
- * Two functions, both taking a bucket. That is the whole surface — which is
+ * Three functions, all taking a bucket. That is the whole surface — which is
  * what makes it cheap to hand a recorder to the photo tests instead of really
  * uploading. The bucket is shared with the seeded demo photos and an upload
  * has no rollback, so a test that really wrote to it would leave objects in a
@@ -22,7 +22,28 @@ export type StorageClient = {
     contentType: string,
   ): Promise<{ error: string | null }>
   remove(bucket: PhotoBucket, paths: string[]): Promise<{ error: string | null }>
+  /**
+   * A short-lived read URL for an object in a PRIVATE bucket.
+   *
+   * `payment-proofs` is the only private bucket in this project: a transfer
+   * screenshot shows a bank account number and a name, so it must never be
+   * reachable by URL alone the way branch-photos and payment-qr are. Callers
+   * mint one of these per render, after their own authorization check -- the
+   * URL itself carries no identity, so issuing it IS the authorization
+   * decision.
+   */
+  createSignedUrl(
+    bucket: PhotoBucket,
+    path: string,
+    expiresInSeconds: number,
+  ): Promise<{ url: string | null; error: string | null }>
 }
+
+/**
+ * Five minutes. Long enough to render a review page and look at the image,
+ * short enough that a URL pasted into a chat is dead before it travels.
+ */
+export const PROOF_URL_TTL_SECONDS = 300
 
 /**
  * Built once and reused. `SUPABASE_SECRET_KEY` is the service-role key — it
@@ -61,6 +82,13 @@ export function serviceRoleStorage(): StorageClient {
     async remove(bucket, paths) {
       const { error } = await client().storage.from(bucket).remove(paths)
       return { error: error ? error.message : null }
+    },
+    async createSignedUrl(bucket, path, expiresInSeconds) {
+      const { data, error } = await client()
+        .storage.from(bucket)
+        .createSignedUrl(path, expiresInSeconds)
+      if (error) return { url: null, error: error.message }
+      return { url: data?.signedUrl ?? null, error: null }
     },
   }
 }

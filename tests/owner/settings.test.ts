@@ -82,6 +82,9 @@ function recorder(ownerId: string, options: { uploadError?: string; removeError?
       calls.push({ op: 'remove', bucket, paths, pathAtCall: await currentPath() })
       return { error: options.removeError ?? null }
     },
+    async createSignedUrl(_bucket, path) {
+      return { url: `https://signed.test/${path}`, error: null }
+    },
   }
 
   return { client, calls }

@@ -324,3 +324,114 @@ test('CONCURRENCY: one player cannot exceed the hold ceiling under parallel requ
   expect(results.filter((r) => !r.ok && r.reason === 'too_many_holds'))
     .toHaveLength(courtIds.length - MAX_CONCURRENT_HOLDS)
 }, 20_000)
+
+test('a manual-rail hold is born pending_verification with every fee at zero', async () => {
+  const { ownerId, branchId, courtIds } = await seedBranchWithCourts(1)
+  await db.execute(sql`
+    insert into owner_payment_methods
+      (owner_id, kind, institution, account_name, account_number, position)
+    values (${ownerId}::uuid, 'ewallet', 'GCash', 'Smash Courts', '09171234567', 0)
+  `)
+  await db.execute(
+    sql`update profiles set payment_mode = 'manual' where id = ${ownerId}::uuid`,
+  )
+  const playerId = await seedPlayer()
+
+  const result = await createHold({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    date: '2027-04-01',
+    startHour: 12,
+    endHour: 13,
+  })
+  expect(result.ok).toBe(true)
+  if (!result.ok) return
+  expect(result.paymentMode).toBe('manual')
+
+  const row = await db.execute(sql`
+    select status::text as status, payment_mode::text as rail,
+           court_fee_centavos, platform_fee_centavos, processor_fee_centavos,
+           transaction_fee_centavos, total_charged_centavos, owner_net_centavos,
+           fee_config_snapshot
+    from bookings where id = ${result.bookingId}::uuid
+  `)
+  const booking = row.rows[0]
+  expect(booking.status).toBe('pending_verification')
+  expect(booking.rail).toBe('manual')
+  expect(Number(booking.platform_fee_centavos)).toBe(0)
+  expect(Number(booking.processor_fee_centavos)).toBe(0)
+  expect(Number(booking.transaction_fee_centavos)).toBe(0)
+  expect(Number(booking.total_charged_centavos)).toBe(Number(booking.court_fee_centavos))
+  expect(Number(booking.owner_net_centavos)).toBe(Number(booking.court_fee_centavos))
+  expect((booking.fee_config_snapshot as { mode: string }).mode).toBe('manual')
+})
+
+test('an automated-rail hold is unchanged and records its rail', async () => {
+  const { branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+
+  const result = await createHold({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    date: '2027-04-02',
+    startHour: 12,
+    endHour: 13,
+  })
+  expect(result.ok).toBe(true)
+  if (!result.ok) return
+  expect(result.paymentMode).toBe('automated')
+
+  const row = await db.execute(sql`
+    select status::text as status, payment_mode::text as rail,
+           platform_fee_centavos
+    from bookings where id = ${result.bookingId}::uuid
+  `)
+  expect(row.rows[0].status).toBe('pending_payment')
+  expect(row.rows[0].rail).toBe('automated')
+  expect(Number(row.rows[0].platform_fee_centavos)).toBeGreaterThan(0)
+})
+
+test('the review window never outlives the slot, and never lands in the past', async () => {
+  const { ownerId, branchId, courtIds } = await seedBranchWithCourts(1)
+  await db.execute(sql`
+    insert into owner_payment_methods
+      (owner_id, kind, institution, account_name, account_number, position)
+    values (${ownerId}::uuid, 'bank', 'BPI', 'Smash Courts Inc', '1234567890', 0)
+  `)
+  // The maximum window, 7 days, against a slot that ends tomorrow -- so the
+  // cap always binds and the assertion is deterministic at any wall-clock
+  // time. Tomorrow 11:00-12:00 is inside seedBranchWithCourts' 11..24 hours
+  // every day of the week.
+  await db.execute(sql`
+    update profiles set payment_mode = 'manual', manual_review_minutes = 10080
+    where id = ${ownerId}::uuid
+  `)
+  const playerId = await seedPlayer()
+
+  const tomorrow = await db.execute(sql`
+    select to_char((now() at time zone 'Asia/Manila')::date + 1, 'YYYY-MM-DD') as d
+  `)
+
+  const result = await createHold({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    date: tomorrow.rows[0].d as string,
+    startHour: 11,
+    endHour: 12,
+  })
+  expect(result.ok).toBe(true)
+  if (!result.ok) return
+
+  const row = await db.execute(sql`
+    select (expires_at = ends_at) as capped_to_end,
+           (expires_at > now()) as still_live
+    from bookings where id = ${result.bookingId}::uuid
+  `)
+  // The cap binds: 7 days would have run long past this slot.
+  expect(row.rows[0].capped_to_end).toBe(true)
+  // And the deadline is always in the future -- the invariant that matters.
+  expect(row.rows[0].still_live).toBe(true)
+})

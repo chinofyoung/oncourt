@@ -119,6 +119,37 @@ export async function seedBranchWithCourts(courtCount = 2) {
 }
 
 /**
+ * A payment method for a manual-rail owner.
+ *
+ * No teardown tracking of its own: owner_payment_methods.owner_id is
+ * ON DELETE CASCADE from profiles, so teardownFixtures()'s auth.users delete
+ * already reaches it.
+ */
+export async function seedPaymentMethod(opts: {
+  ownerId: string
+  kind?: 'bank' | 'ewallet'
+  institution?: string
+  accountName?: string
+  accountNumber?: string
+  position?: number
+}): Promise<string> {
+  const result = await db.execute(sql`
+    insert into owner_payment_methods
+      (owner_id, kind, institution, account_name, account_number, position)
+    values (
+      ${opts.ownerId}::uuid,
+      ${opts.kind ?? 'bank'}::payment_method_kind,
+      ${opts.institution ?? 'BPI'},
+      ${opts.accountName ?? 'Fixture Courts Inc'},
+      ${opts.accountNumber ?? '1234567890'},
+      ${opts.position ?? 0}
+    )
+    returning id
+  `)
+  return result.rows[0].id as string
+}
+
+/**
  * Deletes everything the current test file's seedPlayer()/
  * seedBranchWithCourts() calls created, in FK-safe order.
  *
@@ -139,7 +170,7 @@ export async function seedBranchWithCourts(courtCount = 2) {
  * touch these helpers pay no cost and this module is a no-op for them).
  *
  * FK-safe order: email_outbox -> payout_bookings -> payouts -> reviews ->
- * payments -> bookings -> auth.users.
+ * manual_payment_proofs -> payments -> bookings -> auth.users.
  */
 export async function teardownFixtures(): Promise<void> {
   // Two independent tracking arrays, two independent early-return guards
@@ -233,6 +264,21 @@ export async function teardownFixtures(): Promise<void> {
        )
   `)
 
+  // Must precede the bookings delete, and the payments delete is the model:
+  // manual_payment_proofs.booking_id is NO ACTION (RESTRICT) for the same
+  // reason payments.booking_id is -- a proof is a financial record.
+  await db.execute(sql`
+    delete from manual_payment_proofs
+    where booking_id in (
+      select id from bookings
+      where player_id = any (${sql.param(ids)}::uuid[])
+         or created_by = any (${sql.param(ids)}::uuid[])
+         or branch_id in (
+           select id from branches where owner_id = any (${sql.param(ids)}::uuid[])
+         )
+    )
+  `)
+
   // Must precede the bookings delete for the same reason the reviews delete
   // does: payments.booking_id is RESTRICT (a payment is a financial record),
   // so a surviving payment blocks its booking's deletion with 23503 — which
@@ -297,7 +343,13 @@ export async function seedBooking(opts: {
   playerId: string
   startsAt: Date
   hours?: number
-  status?: 'pending_payment' | 'confirmed' | 'completed' | 'expired' | 'refunded_manual'
+  status?:
+    | 'pending_payment'
+    | 'pending_verification'
+    | 'confirmed'
+    | 'completed'
+    | 'expired'
+    | 'refunded_manual'
   totalCentavos?: number
   /**
    * Explicit override for the hold clock. Payments tests need three shapes the

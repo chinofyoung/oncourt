@@ -21,7 +21,17 @@ export type CreateHoldInput = {
 }
 
 export type HoldResult =
-  | { ok: true; bookingId: string; expiresAt: Date }
+  | {
+      ok: true
+      bookingId: string
+      expiresAt: Date
+      /**
+       * Which rail this booking was created on. The caller branches on it:
+       * 'automated' goes to a PayMongo checkout session, 'manual' goes to the
+       * owner's payment details and the proof upload.
+       */
+      paymentMode: 'automated' | 'manual'
+    }
   | {
       ok: false
       reason:
@@ -218,10 +228,14 @@ export async function createHold(input: CreateHoldInput): Promise<HoldResult> {
       //    on sweep-lock ordering may find the slot genuinely free on
       //    retry. That's fail-safe (never double-sells), just not maximally
       //    precise; a bare retry from the caller resolves it.
+      //
+      //    Both hold statuses are swept: a manual booking's expires_at is the
+      //    owner's review deadline, and an overdue one blocks this slot just
+      //    as hard as an unpaid automated hold. Mirrors expire_stale_holds().
       await tx.execute(sql`
         update bookings set status = 'expired'
         where court_id = ${courtId}::uuid
-          and status = 'pending_payment'
+          and status in ('pending_payment', 'pending_verification')
           and expires_at <= now()
           and slot && tstzrange(${startsAt}::timestamptz, ${endsAt}::timestamptz, '[)')
       `)
@@ -233,10 +247,15 @@ export async function createHold(input: CreateHoldInput): Promise<HoldResult> {
       //    (now slot-scoped) sweep above, which only ever touches this one
       //    court — this count spans every court the player might be
       //    holding, so it has to check expiry itself either way.
+      //
+      //    Both hold statuses count: a player awaiting an owner's manual
+      //    review is still holding a slot exactly as much as one awaiting
+      //    PayMongo, so their pending_verification bookings occupy a seat
+      //    against MAX_CONCURRENT_HOLDS too.
       const live = await tx.execute(sql`
         select count(*)::int as n from bookings
         where player_id = ${playerId}::uuid
-          and status = 'pending_payment'
+          and status in ('pending_payment', 'pending_verification')
           and expires_at > now()
       `)
       if (Number(live.rows[0].n) >= MAX_CONCURRENT_HOLDS) {
@@ -260,24 +279,48 @@ export async function createHold(input: CreateHoldInput): Promise<HoldResult> {
           coalesce(p.platform_fee_mode,     s.default_platform_fee_mode)     as mode,
           coalesce(p.platform_fee_value,    s.default_platform_fee_value)    as value,
           coalesce(p.processor_fee_bearer,  s.default_processor_fee_bearer)  as bearer,
-          s.hold_duration_minutes as hold_minutes
+          s.hold_duration_minutes as hold_minutes,
+          p.payment_mode::text as rail,
+          coalesce(p.manual_review_minutes, s.default_manual_review_minutes) as review_minutes
         from platform_settings s
         join branches b on b.id = ${branchId}::uuid
         join profiles p on p.id = b.owner_id
       `)
       const fee = feeRows.rows[0]
+      const rail = fee.rail as 'automated' | 'manual'
       const mode = fee.mode as 'percentage' | 'flat'
       const value = Number(fee.value)
       const holdMinutes = Number(fee.hold_minutes)
+      const reviewMinutes = Number(fee.review_minutes)
 
       // Integer centavos throughout. Basis points -> centavos division is
       // rounded, never left as a float; the processor fee is 0 until the
       // payments slice, where the bearer rules are applied.
-      const platformFee = mode === 'percentage' ? Math.round((courtFee * value) / 10_000) : value
+      //
+      // The manual rail is free. OnCourt never touches this money -- the
+      // player pays the owner directly -- so there is nothing to take a cut
+      // from and nothing to pay a processor. computeFees() is deliberately not
+      // called: its three bearer branches all describe money moving through
+      // the platform, and none of them describes this.
+      //
+      // owner_net = the full court fee. That is honest about what the owner
+      // received, and Task 10 is what keeps it out of the payout pool -- the
+      // platform owes the owner nothing here, because the owner was already
+      // paid.
+      const isManual = rail === 'manual'
+      const platformFee = isManual
+        ? 0
+        : mode === 'percentage'
+          ? Math.round((courtFee * value) / 10_000)
+          : value
       const transactionFee = 0
       const processorFee = 0
       const totalCharged = courtFee + transactionFee
       const ownerNet = courtFee - platformFee
+
+      const snapshot = isManual
+        ? { mode: 'manual' as const, reviewMinutes }
+        : { mode, value, bearer: fee.bearer, holdMinutes }
 
       // 7. Insert. The exclusion constraint arbitrates against any
       //    concurrent booking of the same slot: the loser gets 23P01, or
@@ -285,18 +328,41 @@ export async function createHold(input: CreateHoldInput): Promise<HoldResult> {
       //    wait-for cycle that the deadlock detector had to break — both
       //    are caught identically below and mean "someone else took this
       //    slot."
+      //
+      //    status, payment_mode, expires_at and fee_config_snapshot all
+      //    follow the rail resolved above. The manual deadline is capped
+      //    with least(...) against the slot's own ends_at — deliberately NOT
+      //    starts_at. Step 3.5 above allows an IN-PROGRESS slot to be booked
+      //    (it only refuses ends_at <= now()), so for such a slot
+      //    starts_at < now() already; capping against starts_at would yield
+      //    a deadline already in the past, and the booking would be born
+      //    stale — expires_at <= now() at the moment of insert — with the
+      //    very next overlapping createHold sweeping it before the owner
+      //    could possibly review anything. ends_at is guaranteed to be in
+      //    the future by that same step 3.5 guard, so the cap can never
+      //    produce a dead-on-arrival deadline. It's also the better rule on
+      //    its own merits: an owner's review window can be configured up to
+      //    7 days, and a slot that has already begun is still playable, so
+      //    an owner confirming ten minutes in is still worth something.
       const inserted = await tx.execute(sql`
         insert into bookings (
           court_id, branch_id, player_id, starts_at, ends_at, status, expires_at,
+          payment_mode,
           court_fee_centavos, transaction_fee_centavos, total_charged_centavos,
           platform_fee_centavos, processor_fee_centavos, owner_net_centavos, fee_config_snapshot
         ) values (
           ${courtId}::uuid, ${branchId}::uuid, ${playerId}::uuid,
           ${startsAt}::timestamptz, ${endsAt}::timestamptz,
-          'pending_payment', now() + make_interval(mins => ${holdMinutes}),
+          ${isManual ? 'pending_verification' : 'pending_payment'}::booking_status,
+          ${
+            isManual
+              ? sql`least(now() + make_interval(mins => ${reviewMinutes}), ${endsAt}::timestamptz)`
+              : sql`now() + make_interval(mins => ${holdMinutes})`
+          },
+          ${rail}::payment_mode,
           ${courtFee}, ${transactionFee}, ${totalCharged},
           ${platformFee}, ${processorFee}, ${ownerNet},
-          ${JSON.stringify({ mode, value, bearer: fee.bearer, holdMinutes })}::jsonb
+          ${JSON.stringify(snapshot)}::jsonb
         )
         returning id, expires_at
       `)
@@ -306,6 +372,7 @@ export async function createHold(input: CreateHoldInput): Promise<HoldResult> {
         ok: true as const,
         bookingId: row.id as string,
         expiresAt: new Date(row.expires_at as string),
+        paymentMode: rail,
       }
     }, { isolationLevel: 'read committed' })
   } catch (error) {

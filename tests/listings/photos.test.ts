@@ -49,6 +49,9 @@ function recorder(
       calls.push({ op: 'remove', bucket, paths, rowsAtCall: await countRows() })
       return { error: options.removeError ?? null }
     },
+    async createSignedUrl(_bucket, path) {
+      return { url: `https://signed.test/${path}`, error: null }
+    },
   }
 
   return { client, calls }

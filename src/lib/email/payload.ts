@@ -42,6 +42,8 @@ export type EmailPayload =
       approved: boolean
       rejectionReason: string | null
     }
+  | { kind: 'manual_proof_submitted'; ownerName: string | null; booking: BookingEmailFacts }
+  | { kind: 'manual_proof_rejected'; booking: BookingEmailFacts; rejectionReason: string }
   | {
       kind: 'refund_recorded'
       playerName: string | null

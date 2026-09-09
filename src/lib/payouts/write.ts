@@ -60,6 +60,9 @@ export async function preparePayout(ownerId: string): Promise<PreparePayoutResul
         join branches b on b.id = bk.branch_id
         where b.owner_id = ${ownerId}::uuid
           and bk.status = 'completed'
+          -- Manual rail exclusion: see the payable CTE in
+          -- src/lib/payouts/ledger.ts for the full reasoning.
+          and bk.payment_mode = 'automated'
           and not exists (
             select 1 from payout_bookings pb
             where pb.booking_id = bk.id and pb.kind = 'payment'

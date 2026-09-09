@@ -6,6 +6,8 @@ import { BookingConfirmedEmail } from './templates/booking-confirmed'
 import { BookingNewEmail } from './templates/booking-new'
 import { BookingReminderEmail } from './templates/booking-reminder'
 import { CourtModeratedEmail } from './templates/court-moderated'
+import { ManualProofRejectedEmail } from './templates/manual-proof-rejected'
+import { ManualProofSubmittedEmail } from './templates/manual-proof-submitted'
 import { RefundRecordedEmail } from './templates/refund-recorded'
 
 export type { EmailPayload } from './payload'
@@ -51,6 +53,22 @@ function select(payload: EmailPayload): { subject: string; element: React.ReactE
           branchName: payload.branchName,
           courtName: payload.courtName,
           approved: payload.approved,
+          rejectionReason: payload.rejectionReason,
+        }),
+      }
+    case 'manual_proof_submitted':
+      return {
+        subject: `Confirm payment for ${payload.booking.courtName} at ${payload.booking.branchName}`,
+        element: React.createElement(ManualProofSubmittedEmail, {
+          ownerName: payload.ownerName,
+          booking: payload.booking,
+        }),
+      }
+    case 'manual_proof_rejected':
+      return {
+        subject: `We couldn't confirm your payment for ${payload.booking.courtName}`,
+        element: React.createElement(ManualProofRejectedEmail, {
+          booking: payload.booking,
           rejectionReason: payload.rejectionReason,
         }),
       }

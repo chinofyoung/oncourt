@@ -165,6 +165,7 @@ test('the bookings_no_overlap constraint has the exact expected shape', async ()
   expect(result.rows[0].def).toBe(
     "EXCLUDE USING gist (court_id WITH =, slot WITH &&) WHERE " +
       "((status = ANY (ARRAY['pending_payment'::booking_status, " +
+      "'pending_verification'::booking_status, " +
       "'confirmed'::booking_status, 'completed'::booking_status, " +
       "'blocked'::booking_status])))",
   )

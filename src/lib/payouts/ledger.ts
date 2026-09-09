@@ -55,6 +55,12 @@ async function ledgerRows(ownerFilter: SQL): Promise<OwnerLedger[]> {
       join branches b on b.id = bk.branch_id
       where b.owner_id in (select id from owners)
         and bk.status = 'completed'
+        -- The manual rail never enters the pool. OnCourt collected nothing on
+        -- these bookings -- the player paid the owner directly -- so
+        -- owner_net_centavos here is money the owner ALREADY HAS, not money we
+        -- owe them. Without this the ledger would invent a debt for every
+        -- completed manual booking.
+        and bk.payment_mode = 'automated'
         and not exists (
           select 1 from payout_bookings pb
           where pb.booking_id = bk.id and pb.kind = 'payment'
@@ -66,6 +72,11 @@ async function ledgerRows(ownerFilter: SQL): Promise<OwnerLedger[]> {
       join branches b on b.id = bk.branch_id
       where b.owner_id in (select id from owners)
         and bk.status = 'refunded_manual'
+        -- No payment_mode filter here, and that is deliberate, not an
+        -- oversight: a clawback requires an EXISTING 'payment' payout line
+        -- below, and a manual booking (excluded from the payable CTE above)
+        -- can never have one. So this arm is already unreachable for manual
+        -- bookings without needing its own filter.
         and exists (
           select 1 from payout_bookings pb
           where pb.booking_id = bk.id and pb.kind = 'payment'
@@ -248,6 +259,9 @@ export async function getPayablePool(ownerId: string): Promise<PayableBooking[]>
     join courts c on c.id = bk.court_id
     where br.owner_id = ${ownerId}::uuid
       and bk.status = 'completed'
+      -- Manual rail exclusion: see the payable CTE in ledgerRows above for
+      -- the full reasoning.
+      and bk.payment_mode = 'automated'
       and not exists (
         select 1 from payout_bookings pb
         where pb.booking_id = bk.id and pb.kind = 'payment'

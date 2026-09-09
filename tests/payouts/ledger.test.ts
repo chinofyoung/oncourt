@@ -7,6 +7,7 @@ import {
   getOwnerPayouts,
   getPayablePool,
 } from '@/lib/payouts/ledger'
+import { preparePayout } from '@/lib/payouts/write'
 import {
   manilaHour,
   seedBlock,
@@ -205,4 +206,76 @@ test('getBranchesOwnerId resolves one owner, and refuses to guess across two', a
   expect(await getBranchesOwnerId([first.branchId])).toBe(first.ownerId)
   expect(await getBranchesOwnerId([])).toBeNull()
   expect(await getBranchesOwnerId([first.branchId, second.branchId])).toBeNull()
+})
+
+test('a completed manual booking is owed nothing, previewed nowhere, and paid never', async () => {
+  const { ownerId, branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+
+  const bookingId = await seedBooking({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    startsAt: manilaHour('2027-07-01', 12),
+    status: 'completed',
+  })
+  await db.execute(sql`
+    update bookings set payment_mode = 'manual', platform_fee_centavos = 0,
+      owner_net_centavos = court_fee_centavos
+    where id = ${bookingId}::uuid
+  `)
+
+  const ledger = await getOwnerLedger(ownerId)
+  expect(ledger?.owedCentavos).toBe(0)
+  expect(ledger?.payableBookingCount).toBe(0)
+
+  expect(await getPayablePool(ownerId)).toEqual([])
+
+  expect(await preparePayout(ownerId)).toEqual({ ok: false, reason: 'nothing_to_pay' })
+})
+
+test('an automated booking beside a manual one is still paid', async () => {
+  const { ownerId, branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+
+  const manualId = await seedBooking({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    startsAt: manilaHour('2027-07-02', 12),
+    status: 'completed',
+  })
+  await db.execute(
+    sql`update bookings set payment_mode = 'manual' where id = ${manualId}::uuid`,
+  )
+  await seedBooking({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    startsAt: manilaHour('2027-07-02', 14),
+    status: 'completed',
+  })
+
+  const pool = await getPayablePool(ownerId)
+  expect(pool).toHaveLength(1)
+  expect(pool[0].bookingId).not.toBe(manualId)
+})
+
+test('a refunded manual booking produces no clawback', async () => {
+  const { ownerId, branchId, courtIds } = await seedBranchWithCourts(1)
+  const playerId = await seedPlayer()
+  const bookingId = await seedBooking({
+    courtId: courtIds[0],
+    branchId,
+    playerId,
+    startsAt: manilaHour('2027-07-03', 12),
+    status: 'refunded_manual',
+  })
+  await db.execute(
+    sql`update bookings set payment_mode = 'manual' where id = ${bookingId}::uuid`,
+  )
+
+  const ledger = await getOwnerLedger(ownerId)
+  expect(ledger?.clawbackBookingCount).toBe(0)
+  expect(ledger?.owedCentavos).toBe(0)
 })

@@ -11,7 +11,15 @@
  * up in <img src> and are meant to be fetched by the browser.
  */
 
-export type PhotoBucket = 'branch-photos' | 'court-photos'
+/**
+ * `payment-qr` and `payment-proofs` are also `PhotoBucket`s (this type is the
+ * bucket parameter on `StorageClient` in src/lib/listings/storage.ts, so
+ * widening it here widens that too). Only `payment-qr` may ever be passed to
+ * `photoUrl` below: `payment-proofs` is a PRIVATE bucket, so a public
+ * `/object/public/` URL built for it 404s -- reads go through a signed URL
+ * minted server-side instead (src/lib/listings/storage.ts).
+ */
+export type PhotoBucket = 'branch-photos' | 'court-photos' | 'payment-qr' | 'payment-proofs'
 
 export function photoUrl(
   bucket: PhotoBucket,

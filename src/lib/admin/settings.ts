@@ -260,3 +260,71 @@ export async function updateOwnerFeeOverride(
 
   return result.rows.length === 0 ? { ok: false, reason: 'no_such_owner' } : { ok: true }
 }
+
+export type PaymentModeResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'no_payment_methods' }
+
+export async function getOwnerPaymentMode(
+  ownerId: string,
+): Promise<'automated' | 'manual' | null> {
+  const result = await db.execute(sql`
+    select payment_mode::text as mode from profiles where id = ${ownerId}::uuid
+  `)
+  if (result.rows.length === 0) return null
+  return result.rows[0].mode as 'automated' | 'manual'
+}
+
+/**
+ * Which payment rail an owner is on. Admin-only, like the fee override
+ * directly above -- same `role in ('owner','admin')` scoping so a rail can
+ * never be parked on a plain player's profile.
+ *
+ * Flipping TO manual is guarded on the owner having at least one payment
+ * method. Without one, the checkout page has nothing to show and the owner's
+ * courts become unbookable the instant the switch lands -- the same
+ * save-time-guard shape as cheapestApprovedRateCentavos above, which refuses a
+ * flat fee that would exceed the owner's cheapest rate.
+ *
+ * Flipping BACK to automated is unconditional: bookings already in flight
+ * carry their own snapshotted rail (bookings.payment_mode), so nothing in
+ * progress is disturbed.
+ *
+ * The count and the update share a transaction so an owner deleting their
+ * last method concurrently cannot slip between the two -- deliberately NOT
+ * importing countPaymentMethods from src/lib/owner/payment-methods.ts: that
+ * helper runs against the bare `db` handle, outside any transaction, so it
+ * cannot see this transaction's snapshot and could race a concurrent delete.
+ * The inline `select count(*)` below runs on `tx`, the same connection as the
+ * UPDATE, closing that window.
+ */
+export async function updateOwnerPaymentMode(
+  ownerId: string,
+  mode: 'automated' | 'manual',
+): Promise<PaymentModeResult> {
+  return db.transaction(
+    async (tx) => {
+      if (mode === 'manual') {
+        const methods = await tx.execute(sql`
+          select count(*)::int as n from owner_payment_methods
+          where owner_id = ${ownerId}::uuid
+        `)
+        if (Number(methods.rows[0].n) === 0) {
+          return { ok: false as const, reason: 'no_payment_methods' as const }
+        }
+      }
+
+      // `returning id` + rows.length, never rowCount: an UPDATE without
+      // returning reports zero rows regardless of what it touched. Same trap
+      // documented at length in updateOwnerFeeOverride above.
+      const updated = await tx.execute(sql`
+        update profiles set payment_mode = ${mode}::payment_mode
+        where id = ${ownerId}::uuid and role in ('owner', 'admin')
+        returning id
+      `)
+      if (updated.rows.length === 0) return { ok: false as const, reason: 'not_found' as const }
+      return { ok: true as const }
+    },
+    { isolationLevel: 'read committed' },
+  )
+}
